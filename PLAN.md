@@ -54,7 +54,7 @@ title       = "Stephansdom at dusk"
 description = """
 Longer text.  Markdown.
 """
-taken       = "2026-07-17T17:23:17+02:00"
+taken       = 2026-07-17T17:23:17+02:00   # a TOML datetime; offset if known
 tags        = [ "vienna", "church" ]
 visibility  = "public"           # "private": kept, never published
 flickr_id   = "53012345678"      # only on imported photos; provenance
@@ -173,7 +173,16 @@ thumbnail and title.
 
 ### Private zones (geofences)
 
-`jiggle.toml` lists private zones, each a center and a radius.  A photo taken
+`jiggle.toml` lists private zones, each a center and a radius in meters:
+
+```toml
+[[private_zone]]
+lat    = 40.0
+lon    = -75.0
+radius = 500
+```
+
+  A photo taken
 inside one publishes no coordinates anywhere: not on its page, not in the
 GeoJSON, not in the search index.  Its TOML keeps the true location.  Before
 leaving Flickr, copy the zones from Flickr's settings, which the export

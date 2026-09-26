@@ -1,0 +1,49 @@
+% my ($w, $h) = $site->rendition_size($photo, '2048.webp');
+<article class="photo">
+  <figure>
+    <img src="<%= $site->rendition_url($photo, '1024.webp') %>"
+         srcset="<%= $site->srcset($photo) %>"
+         sizes="(max-width: 1200px) 100vw, 1200px"
+         width="<%= $w %>" height="<%= $h %>"
+         alt="<%= $site->display_title($photo) %>">
+  </figure>
+  <nav class="neighbors">
+% if ($newer) {
+    <a rel="prev" href="<%= $site->photo_url($newer) %>">&larr; newer</a>
+% }
+% if ($older) {
+    <a rel="next" href="<%= $site->photo_url($older) %>">older &rarr;</a>
+% }
+  </nav>
+  <div class="photo-info">
+    <div class="photo-text">
+      <h1><%= $site->display_title($photo) %></h1>
+      <%= $site->description_html($photo->description) %>
+    </div>
+    <dl class="photo-meta">
+% if (defined $photo->taken) {
+      <dt>Taken</dt><dd><%= $site->display_date($photo) %></dd>
+% }
+% if (@$albums) {
+      <dt>Albums</dt>
+      <dd>
+%   for my $album (@$albums) {
+        <a href="/albums/<%= $album->{slug} %>/"><%= $album->{title} %></a>
+%   }
+      </dd>
+% }
+% if ($photo->tags->@*) {
+      <dt>Tags</dt>
+      <dd class="tags">
+%   for my $tag ($photo->tags->@*) {
+        <a href="/tags/<%= $site->tag_slug($tag) %>/"><%= $tag %></a>
+%   }
+      </dd>
+% }
+    </dl>
+% if ($location) {
+    <div id="photo-map" class="photo-map"></div>
+    <script>jiggleMap.single('photo-map', <%= $location->{lat} %>, <%= $location->{lon} %>);</script>
+% }
+  </div>
+</article>
