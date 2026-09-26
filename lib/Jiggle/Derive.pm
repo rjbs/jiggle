@@ -39,14 +39,19 @@ sub _cpu_count {
 }
 
 # Each recipe is: the rendition's filename, a version, and how to make it.
-# "box" fits the image inside an NxN square, never enlarging it; "square"
-# crops to an NxN square, choosing the crop by libvips's attention heuristic.
+# "fit" shrinks the image to fit inside a WxH box, never enlarging it;
+# "square" crops to an NxN square, choosing the crop by libvips's attention
+# heuristic.
+#
+# h480 is for the justified grids, where every photo in a row has the same
+# height.  The width limit only matters for panoramas.
 my @RECIPES = (
   { name => 'sq300.webp', version => 1, square => 300,  opts => 'Q=75' },
-  { name => '500.webp',   version => 1, box    => 500,  opts => 'Q=80' },
-  { name => '1024.webp',  version => 1, box    => 1024, opts => 'Q=80' },
-  { name => '2048.webp',  version => 1, box    => 2048, opts => 'Q=80' },
-  { name => 'og.jpg',     version => 1, box    => 1200, opts => 'Q=85' },
+  { name => 'h480.webp',  version => 1, fit    => [ 1920,  480 ], opts => 'Q=75' },
+  { name => '500.webp',   version => 1, fit    => [  500,  500 ], opts => 'Q=80' },
+  { name => '1024.webp',  version => 1, fit    => [ 1024, 1024 ], opts => 'Q=80' },
+  { name => '2048.webp',  version => 1, fit    => [ 2048, 2048 ], opts => 'Q=80' },
+  { name => 'og.jpg',     version => 1, fit    => [ 1200, 1200 ], opts => 'Q=85' },
 );
 
 sub recipes ($class) { @RECIPES }
@@ -67,7 +72,8 @@ sub rendition_size ($class, $photo, $name) {
   return ($recipe->{square}) x 2 if $recipe->{square};
 
   my ($w, $h) = ($photo->width, $photo->height);
-  my $scale = List::Util::min(1, $recipe->{box} / List::Util::max($w, $h));
+  my ($max_w, $max_h) = $recipe->{fit}->@*;
+  my $scale = List::Util::min(1, $max_w / $w, $max_h / $h);
 
   # libvips rounds to nearest when it shrinks, so we do too.
   return (int($w * $scale + 0.5), int($h * $scale + 0.5));
@@ -161,7 +167,7 @@ sub _derive_one ($self, $photo) {
 
     my @size = $recipe->{square}
              ? ($recipe->{square}, '--height', $recipe->{square}, '--crop', 'attention')
-             : ($recipe->{box},    '--height', $recipe->{box});
+             : ($recipe->{fit}[0],   '--height', $recipe->{fit}[1]);
 
     my @cmd = (
       'vips', 'thumbnail', "$source", "$tmp\[$recipe->{opts},keep=none]",

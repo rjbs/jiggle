@@ -73,5 +73,8 @@ rendition_size_is('portrait box',     3000, 4000, '2048.webp',  [ 1536, 2048 ]);
 rendition_size_is('never enlarged',    800,  600, '2048.webp',  [ 800, 600 ]);
 rendition_size_is('square crop',      4000, 3000, 'sq300.webp', [ 300, 300 ]);
 rendition_size_is('rounds to nearest', 5712, 4284, '500.webp',  [ 500, 375 ]);
+rendition_size_is('row, landscape',    5712, 4284, 'h480.webp', [ 640, 480 ]);
+rendition_size_is('row, portrait',     4284, 5712, 'h480.webp', [ 360, 480 ]);
+rendition_size_is('row, panorama',    10000, 1000, 'h480.webp', [ 1920, 192 ]);
 
 done_testing;

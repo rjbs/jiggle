@@ -47,21 +47,42 @@ main { max-width: 1400px; margin: 0 auto; padding: 1rem; }
 
 h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
 
+/* A justified grid: every photo in a row has the same height, and rows fill
+   the width.  Each tile's basis is its width at the target row height, and
+   its grow factor is its aspect ratio, so the spare width in a row is shared
+   out in proportion to aspect ratio, which keeps the heights equal.  The
+   ::after element takes up the spare width in the last row, so a short last
+   row stays near the target height instead of being stretched to fill the
+   whole width.  -- claude, 2026-09-26 */
 .grid {
+  --row: 240px;
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 4px;
+}
+
+.grid li {
+  flex-grow: var(--ar);
+  flex-basis: calc(var(--ar) * var(--row));
+}
+
+.grid::after {
+  content: "";
+  flex-grow: 1000000;
 }
 
 .grid img {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 1;
   background: var(--tile-bg);
+}
+
+@media (max-width: 600px) {
+  .grid { --row: 150px; }
 }
 
 .photo figure { margin: 0; text-align: center; }
