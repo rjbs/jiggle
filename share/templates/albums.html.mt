@@ -3,7 +3,7 @@
 % for my $album (@$albums) {
   <li>
     <a href="/albums/<%= $album->{slug} %>/">
-      <img src="<%= $site->rendition_url($album->{cover}, 'sq300.webp') %>" width="300" height="300" loading="lazy" alt="">
+      <img src="<%= $site->rendition_url($album->{cover}, 'h480.webp') %>" loading="lazy" alt="">
       <span class="album-title"><%= $album->{title} %></span>
       <span class="count"><%= scalar $album->{photos}->@* %> photo<%= $album->{photos}->@* == 1 ? '' : 's' %></span>
     </a>

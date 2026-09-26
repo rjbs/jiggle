@@ -108,7 +108,7 @@ Generated with libvips, which is fast and memory-frugal, in parallel.
 
 | rendition     | use                                   | format |
 |---------------|---------------------------------------|--------|
-| `sq300.webp`  | grid thumbnails, smart-cropped square | WebP   |
+| `h480.webp`   | grid thumbnails, 480px tall           | WebP   |
 | `500.webp`    | small, `srcset`                       | WebP   |
 | `1024.webp`   | medium, `srcset`                      | WebP   |
 | `2048.webp`   | large, photo page, `srcset`           | WebP   |

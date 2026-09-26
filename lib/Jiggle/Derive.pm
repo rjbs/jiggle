@@ -39,19 +39,16 @@ sub _cpu_count {
 }
 
 # Each recipe is: the rendition's filename, a version, and how to make it.
-# "fit" shrinks the image to fit inside a WxH box, never enlarging it;
-# "square" crops to an NxN square, choosing the crop by libvips's attention
-# heuristic.
+# "fit" shrinks the image to fit inside a WxH box, never enlarging it.
 #
 # h480 is for the justified grids, where every photo in a row has the same
 # height.  The width limit only matters for panoramas.
 my @RECIPES = (
-  { name => 'sq300.webp', version => 1, square => 300,  opts => 'Q=75' },
-  { name => 'h480.webp',  version => 1, fit    => [ 1920,  480 ], opts => 'Q=75' },
-  { name => '500.webp',   version => 1, fit    => [  500,  500 ], opts => 'Q=80' },
-  { name => '1024.webp',  version => 1, fit    => [ 1024, 1024 ], opts => 'Q=80' },
-  { name => '2048.webp',  version => 1, fit    => [ 2048, 2048 ], opts => 'Q=80' },
-  { name => 'og.jpg',     version => 1, fit    => [ 1200, 1200 ], opts => 'Q=85' },
+  { name => 'h480.webp',  version => 1, fit => [ 1920,  480 ], opts => 'Q=75' },
+  { name => '500.webp',   version => 1, fit => [  500,  500 ], opts => 'Q=80' },
+  { name => '1024.webp',  version => 1, fit => [ 1024, 1024 ], opts => 'Q=80' },
+  { name => '2048.webp',  version => 1, fit => [ 2048, 2048 ], opts => 'Q=80' },
+  { name => 'og.jpg',     version => 1, fit => [ 1200, 1200 ], opts => 'Q=85' },
 );
 
 sub recipes ($class) { @RECIPES }
@@ -68,8 +65,6 @@ from the original's dimensions, without looking at any file.
 sub rendition_size ($class, $photo, $name) {
   my ($recipe) = grep {; $_->{name} eq $name } @RECIPES;
   die "unknown rendition $name" unless $recipe;
-
-  return ($recipe->{square}) x 2 if $recipe->{square};
 
   my ($w, $h) = ($photo->width, $photo->height);
   my ($max_w, $max_h) = $recipe->{fit}->@*;
@@ -91,6 +86,8 @@ several photos at once.  It returns the number of renditions made.
 my $JSON = JSON::MaybeXS->new->canonical->pretty;
 
 sub derive_photos ($self, @photos) {
+  $self->remove_obsolete(@photos);
+
   my @work = grep {; $self->_stale_recipes($_) } @photos;
   return 0 unless @work;
 
@@ -124,6 +121,41 @@ sub derive_photos ($self, @photos) {
 
   die "failed to derive: @failed\n" if @failed;
   return $made;
+}
+
+=method remove_obsolete
+
+  $derive->remove_obsolete(@photos);
+
+This deletes files in each photo's derived directory that no current recipe
+produces: renditions whose recipe was removed or renamed, and temporary files
+left by an interrupted run.  It returns the number of files removed.
+
+=cut
+
+sub remove_obsolete ($self, @photos) {
+  my %keep = map {; $_->{name} => 1 } @RECIPES;
+  $keep{'state.json'} = 1;
+
+  my $removed = 0;
+
+  for my $photo (@photos) {
+    my $dir = $self->library->derived_path($photo->id);
+    next unless -d $dir;
+
+    my @obsolete = grep {; ! $keep{ $_->basename } } $dir->children;
+    next unless @obsolete;
+
+    $_->remove for @obsolete;
+    $removed += @obsolete;
+
+    my $state = $self->_state($photo);
+    delete @$state{ grep {; ! $keep{$_} } keys %$state };
+    $self->_state_file($photo)->spew_raw($JSON->encode($state));
+  }
+
+  $self->logger->("removed $removed obsolete rendition file(s)") if $removed;
+  return $removed;
 }
 
 sub _state_file ($self, $photo) {
@@ -165,13 +197,10 @@ sub _derive_one ($self, $photo) {
     # partial file where a finished one belongs.
     my $tmp = $dir->child(".tmp-$recipe->{name}");
 
-    my @size = $recipe->{square}
-             ? ($recipe->{square}, '--height', $recipe->{square}, '--crop', 'attention')
-             : ($recipe->{fit}[0],   '--height', $recipe->{fit}[1]);
 
     my @cmd = (
       'vips', 'thumbnail', "$source", "$tmp\[$recipe->{opts},keep=none]",
-      @size,
+      $recipe->{fit}[0], '--height', $recipe->{fit}[1],
       '--size', 'down',
       '--export-profile', 'srgb',
     );

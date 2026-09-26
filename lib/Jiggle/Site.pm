@@ -375,7 +375,7 @@ sub _geojson ($self) {
       properties => {
         title => $self->display_title($photo),
         url   => $self->photo_url($photo),
-        thumb => $self->rendition_url($photo, 'sq300.webp'),
+        thumb => $self->rendition_url($photo, 'h480.webp'),
       },
     };
   }
