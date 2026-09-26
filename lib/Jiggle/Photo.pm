@@ -1,0 +1,126 @@
+package Jiggle::Photo;
+use v5.36;
+
+use Moo;
+
+use Carp ();
+use JSON::MaybeXS ();
+use Jiggle::TOML qw( load_toml_file );
+
+=head1 NAME
+
+Jiggle::Photo - one photo (or video), as described by its metadata file
+
+=head1 DESCRIPTION
+
+A photo is built from a TOML file in the library's F<meta> tree.  Most of its
+attributes are things a person edits: title, description, tags, visibility.
+The C<original> hash records immutable facts about the original file (its
+digest, size, and oriented dimensions) so that building pages never requires
+opening an image.
+
+=cut
+
+has id    => (is => 'ro', required => 1);
+has type  => (is => 'ro', default  => 'photo');
+
+has title       => (is => 'ro', default => '');
+has description => (is => 'ro', default => '');
+
+# A TOML datetime, kept as its string form: either with an offset
+# (2026-07-17T17:23:17+02:00) or local (2026-07-17T17:23:17).  May be absent.
+has taken => (is => 'ro');
+
+has tags  => (is => 'ro', default => sub { [] });
+
+has visibility => (
+  is  => 'ro',
+  default => 'public',
+  isa => sub ($v) {
+    Carp::croak("unknown visibility $v") unless $v eq 'public' or $v eq 'private';
+  },
+);
+
+has flickr_id => (is => 'ro');
+
+# { file, ext, sha256, bytes, width, height }
+has original => (is => 'ro', required => 1);
+
+# { lat, lon } or undef
+has location => (is => 'ro');
+
+sub is_public ($self) { $self->visibility eq 'public' }
+
+sub ext    ($self) { $self->original->{ext}    }
+sub sha256 ($self) { $self->original->{sha256} }
+sub width  ($self) { $self->original->{width}  }
+sub height ($self) { $self->original->{height} }
+
+sub from_toml_file ($class, $file) {
+  my $data = load_toml_file($file);
+  my $self = eval { $class->new($data) };
+  die "error loading $file: $@" unless $self;
+  return $self;
+}
+
+=method as_toml
+
+This returns the photo's metadata as TOML text.  Keys come out in a fixed,
+readable order rather than whatever order a generic serializer picks, because
+these files are meant to be read and edited by hand, and diffed in git.
+
+=cut
+
+my $JSON = JSON::MaybeXS->new->allow_nonref->canonical;
+
+# A JSON string literal is also a valid TOML basic string, since TOML's
+# escapes are a superset of the ones JSON emits.  (JSON::MaybeXS doesn't escape
+# "/", which would be the one exception.) -- claude, 2026-09-26
+sub _str ($s) { $JSON->encode("$s") }
+
+sub as_toml ($self) {
+  my @lines;
+
+  push @lines, sprintf 'id = %s',   _str($self->id);
+  push @lines, sprintf 'type = %s', _str($self->type);
+  push @lines, sprintf 'title = %s', _str($self->title);
+
+  my $desc = $self->description;
+  if ($desc =~ /\n/) {
+    # Multi-line strings in TOML end at the first """, so escape any run of
+    # quotes that could close the string early.
+    (my $escaped = $desc) =~ s/\\/\\\\/g;
+    $escaped =~ s/"(?=")/\\"/g;
+    $escaped =~ s/"\z/\\"/;
+    push @lines, qq{description = """\n$escaped"""};
+  } else {
+    push @lines, sprintf 'description = %s', _str($desc);
+  }
+
+  push @lines, sprintf 'taken = %s', $self->taken if defined $self->taken;
+
+  push @lines, sprintf 'tags = [%s]',
+    join q{, }, map {; _str($_) } $self->tags->@*;
+
+  push @lines, sprintf 'visibility = %s', _str($self->visibility);
+  push @lines, sprintf 'flickr_id = %s', _str($self->flickr_id)
+    if defined $self->flickr_id;
+
+  push @lines, q{}, '[original]';
+  for my $key (qw( file ext sha256 )) {
+    push @lines, sprintf '%s = %s', $key, _str($self->original->{$key});
+  }
+  for my $key (qw( bytes width height )) {
+    push @lines, sprintf '%s = %d', $key, $self->original->{$key};
+  }
+
+  if (my $loc = $self->location) {
+    push @lines, q{}, '[location]';
+    push @lines, sprintf 'lat = %.7f', $loc->{lat};
+    push @lines, sprintf 'lon = %.7f', $loc->{lon};
+  }
+
+  return join qq{\n}, @lines, q{};
+}
+
+1;
