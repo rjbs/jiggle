@@ -182,9 +182,8 @@ lon    = -75.0
 radius = 500
 ```
 
-  A photo taken
-inside one publishes no coordinates anywhere: not on its page, not in the
-GeoJSON, not in the search index.  Its TOML keeps the true location.  Before
+A photo taken inside one publishes no coordinates anywhere: not on its page,
+not in the GeoJSON, not in the search index.  Its TOML keeps the true location.  Before
 leaving Flickr, copy the zones from Flickr's settings, which the export
 probably doesn't include (thread: *Location privacy zones*).
 
