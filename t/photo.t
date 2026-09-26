@@ -1,0 +1,77 @@
+use v5.36;
+
+use Test::More;
+use Test::Deep;
+
+use lib 'lib';
+
+use Jiggle::Derive;
+use Jiggle::Photo;
+use Path::Tiny ();
+
+sub photo (%arg) {
+  Jiggle::Photo->new({
+    id       => 'abcd1234',
+    original => {
+      file => 'IMG_0001.JPG', ext => 'jpg', sha256 => 'f' x 64,
+      bytes => 1000, width => 4000, height => 3000,
+    },
+    %arg,
+  });
+}
+
+sub round_trips_ok ($desc, %arg) {
+  my $photo = photo(%arg);
+
+  my $file = Path::Tiny->tempfile(SUFFIX => '.toml');
+  $file->spew_utf8($photo->as_toml);
+
+  my $reloaded = Jiggle::Photo->from_toml_file($file);
+
+  # Compare everything but the object identity.
+  cmp_deeply({ %$reloaded }, { %$photo }, "round trip: $desc")
+    or diag $photo->as_toml;
+}
+
+sub rendition_size_is ($desc, $w, $h, $rendition, $want) {
+  my $photo = photo(original => {
+    file => 'x.jpg', ext => 'jpg', sha256 => 'f' x 64, bytes => 1,
+    width => $w, height => $h,
+  });
+
+  is_deeply(
+    [ Jiggle::Derive->rendition_size($photo, $rendition) ],
+    $want,
+    "rendition size: $desc",
+  );
+}
+
+round_trips_ok('minimal');
+
+round_trips_ok('everything',
+  title       => 'Stephansdom',
+  description => 'A church.',
+  taken       => '2026-07-17T17:23:17+02:00',
+  tags        => [ 'vienna', 'church' ],
+  visibility  => 'private',
+  flickr_id   => '53012345678',
+  location    => { lat => 48.2084, lon => 16.3731 },
+);
+
+round_trips_ok('local datetime', taken => '2026-07-17T17:23:17');
+
+round_trips_ok('awkward strings',
+  title       => qq{"Quoted" \\ back/slash \x{263A}},
+  description => qq{Line one,\nline "two" and ""three"",\n\\n is literal\nends with "},
+  tags        => [ q{it's}, q{"q"} ],
+);
+
+round_trips_ok('southern hemisphere', location => { lat => -37.8098306, lon => -144.9615472 });
+
+rendition_size_is('landscape box',    4000, 3000, '1024.webp',  [ 1024, 768 ]);
+rendition_size_is('portrait box',     3000, 4000, '2048.webp',  [ 1536, 2048 ]);
+rendition_size_is('never enlarged',    800,  600, '2048.webp',  [ 800, 600 ]);
+rendition_size_is('square crop',      4000, 3000, 'sq300.webp', [ 300, 300 ]);
+rendition_size_is('rounds to nearest', 5712, 4284, '500.webp',  [ 500, 375 ]);
+
+done_testing;
