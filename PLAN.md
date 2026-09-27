@@ -48,7 +48,7 @@ overwrites (and from there to B2).  `meta/` is a git repository with a remote.
 ### Photo metadata
 
 ```toml
-id          = "k3v9x2qa"
+id          = "3f9a0c21b7e4"
 type        = "photo"            # or "video"
 title       = "Stephansdom at dusk"
 description = """
@@ -86,8 +86,8 @@ its own file, `meta/albums/<slug>.toml`:
 ```toml
 title       = "Vienna, 2026-07"
 description = "…"
-cover       = "k3v9x2qa"
-photos      = [ "k3v9x2qa", "…" ]
+cover       = "3f9a0c21b7e4"
+photos      = [ "3f9a0c21b7e4", "…" ]
 ```
 
 Tags stay on the photos.
@@ -98,9 +98,21 @@ Every photo, imported or new, gets an ID in a single new scheme.  Flickr IDs
 survive only as `flickr_id`, which the importer uses for joins and a one-time
 script uses to rewrite the ~165 Flickr links in the blog.
 
-The scheme itself is **undecided** (thread: *Choose the photo ID scheme*).
-Until it's settled, ingest uses a provisional random base32 ID, and nothing
-else in the system may depend on the ID's shape.
+**A photo's ID is the first 12 hex digits of its original's SHA-256** (#1),
+and that's an invariant: replacing an original's bytes makes a new photo with
+a new ID.  The shard is the first two hex digits, giving 256 evenly filled
+directories.
+
+This makes IDs deterministic (the same file gets the same ID on any machine,
+so a re-run import is idempotent), and it makes duplicate detection cheap:
+ingest checks whether one metadata file exists, and never needs to load the
+library.  `fsck` can check that every ID is a prefix of its recorded digest.
+
+At 48 bits, the chance of any collision is about 1 in 5 million at 11,000
+photos, and still about 1 in 225,000 at 50,000.  A collision (same prefix,
+different digest) is a fatal error at ingest, left for a person to resolve.
+8 hex digits (32 bits) would have been too few: about a 1.4% chance of a
+collision in the Flickr import alone.
 
 ## Derivatives
 

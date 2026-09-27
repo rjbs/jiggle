@@ -20,9 +20,15 @@ Jiggle::Ingest - bring new original files into a library
 
 =head1 DESCRIPTION
 
-Ingesting a file means: hashing it, skipping it if that hash is already in the
-library, assigning an id, copying it into the originals tree, and writing a
-stub metadata file with the facts found in its EXIF data.
+Ingesting a file means: hashing it, deriving its id from the hash, skipping it
+if that id is already in the library, copying it into the originals tree, and
+writing a stub metadata file with the facts found in its EXIF data.
+
+Because the id comes from the file's content, checking for a duplicate means
+looking for one metadata file, not loading the whole library.  If a different
+file has the same id (a collision in the abbreviated hash), ingest dies.  At
+48 bits that should never happen, and if it does, a person should decide what
+to do.
 
 Ingest never modifies or removes the source files.
 
@@ -32,14 +38,6 @@ has library => (is => 'ro', required => 1);
 
 # Called with a message for each file skipped or ingested.
 has logger => (is => 'ro', default => sub { sub { } });
-
-has _known_digests => (
-  is => 'lazy',
-  init_arg => undef,
-  default  => sub ($self) {
-    return { map {; $_->sha256 => $_->id } $self->library->photos };
-  },
-);
 
 # These are the types we can make renditions of today.  Video comes later.
 # -- claude, 2026-09-26
@@ -65,9 +63,15 @@ sub ingest_files ($self, @paths) {
 
   for my $path (map {; Path::Tiny::path($_) } @paths) {
     my $digest = Digest::SHA->new(256)->addfile("$path")->hexdigest;
+    my $id     = $self->library->id_for_digest($digest);
 
-    if (my $existing = $self->_known_digests->{$digest}) {
-      $self->logger->("skip $path: already in library as $existing");
+    if (-e (my $meta = $self->library->meta_path($id))) {
+      my $existing = Jiggle::Photo->from_toml_file($meta);
+
+      die "id collision: $path and photo $id have different digests\n"
+        unless $existing->sha256 eq $digest;
+
+      $self->logger->("skip $path: already in library as $id");
       next;
     }
 
@@ -80,7 +84,7 @@ sub ingest_files ($self, @paths) {
     }
 
     my $photo = Jiggle::Photo->new({
-      id    => $self->_new_id,
+      id    => $id,
       taken => $facts->{taken},
       ($facts->{location} ? (location => $facts->{location}) : ()),
       original => {
@@ -95,7 +99,6 @@ sub ingest_files ($self, @paths) {
 
     $self->_install_original($path, $photo);
     $self->library->add_photo($photo);
-    $self->_known_digests->{$digest} = $photo->id;
 
     $self->logger->("ingest $path as " . $photo->id);
     push @photos, $photo;
@@ -116,21 +119,6 @@ sub _install_original ($self, $source, $photo) {
   rename "$tmp", "$dest" or die "can't rename $tmp to $dest: $!";
 
   return;
-}
-
-# The ID scheme is provisional; see PLAN.md and the Loose Thread "Choose the
-# photo ID scheme".  Nothing else may depend on the shape produced here.
-# -- claude, 2026-09-26
-my @ID_ALPHABET = split //, '0123456789abcdefghjkmnpqrstvwxyz';
-
-sub _new_id ($self) {
-  for (1 .. 100) {
-    my $id = join q{}, map {; $ID_ALPHABET[ rand @ID_ALPHABET ] } 1 .. 8;
-    return $id unless $self->library->photo($id)
-                   or -e $self->library->meta_path($id);
-  }
-
-  die "couldn't find an unused id after 100 tries\n";
 }
 
 sub _facts_for ($self, $path) {

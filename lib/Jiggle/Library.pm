@@ -50,6 +50,20 @@ sub meta_dir      ($self) { $self->root->child('meta')      }
 sub derived_dir   ($self) { $self->root->child('derived')   }
 sub albums_dir    ($self) { $self->meta_dir->child('albums') }
 
+=method id_for_digest
+
+  my $id = $library->id_for_digest($sha256_hex);
+
+A photo's id is the first 12 hex digits of its original's SHA-256, always.
+Replacing an original's bytes makes a new photo with a new id.
+
+=cut
+
+sub id_for_digest ($self, $digest) {
+  die "not a SHA-256 hex digest: $digest\n" unless $digest =~ /\A[0-9a-f]{64}\z/;
+  return substr $digest, 0, 12;
+}
+
 sub shard_for ($self, $id) {
   return substr $id, 0, 2;
 }
@@ -77,7 +91,8 @@ order.  The metadata tree is read once and cached.
 
 has _photo_index => (
   is => 'lazy',
-  init_arg => undef,
+  init_arg  => undef,
+  predicate => '_has_photo_index',
   default  => sub ($self) {
     my %photo;
 
@@ -119,7 +134,8 @@ sub albums ($self) { $self->_albums->@* }
 
   $library->add_photo($photo);
 
-This writes a new photo's metadata file and adds it to the in-memory index.
+This writes a new photo's metadata file, and adds it to the in-memory index if
+that has been loaded.
 It dies if a photo with that id already has a metadata file.
 
 =cut
@@ -131,7 +147,8 @@ sub add_photo ($self, $photo) {
   $path->parent->mkdir;
   $path->spew_utf8($photo->as_toml);
 
-  $self->_photo_index->{ $photo->id } = $photo;
+  # Adding a photo mustn't force the whole metadata tree to be read.
+  $self->_photo_index->{ $photo->id } = $photo if $self->_has_photo_index;
   return;
 }
 
