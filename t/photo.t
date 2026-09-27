@@ -75,6 +75,10 @@ round_trips_ok('awkward strings',
 
 round_trips_ok('southern hemisphere', location => { lat => -37.8098306, lon => -144.9615472 });
 
+round_trips_ok('private location', location => { lat => 48.2084, lon => 16.3731, private => 1 });
+
+round_trips_ok('private location', location => { lat => 48.2084, lon => 16.3731, private => 1 });
+
 rendition_size_is('landscape box',    4000, 3000, '1024.webp',  [ 1024, 768 ]);
 rendition_size_is('portrait box',     3000, 4000, '2048.webp',  [ 1536, 2048 ]);
 rendition_size_is('never enlarged',    800,  600, '2048.webp',  [ 800, 600 ]);

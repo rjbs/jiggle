@@ -60,7 +60,9 @@ has flickr_uploaded => (is => 'ro');
 # gone, and Image Capture sets it to the photo's time in the phone's library.
 has original => (is => 'ro', required => 1);
 
-# { lat, lon } or undef
+# { lat, lon } or undef.  It may also have private = true, meaning the location
+# must never be published (say, because it was private on Flickr), though it
+# may be used locally.
 has location => (is => 'ro');
 
 sub is_public ($self) { $self->visibility eq 'public' }
@@ -141,6 +143,7 @@ sub as_toml ($self) {
     push @lines, q{}, '[location]';
     push @lines, sprintf 'lat = %.7f', $loc->{lat};
     push @lines, sprintf 'lon = %.7f', $loc->{lon};
+    push @lines, 'private = true' if $loc->{private};
   }
 
   return join qq{\n}, @lines, q{};

@@ -92,7 +92,8 @@ has _photo_by_id => (
 
 This returns the photo's location as it may be published, or undef.  A photo
 taken inside any private zone in the library's configuration has no public
-location, though its metadata keeps the true one.
+location, though its metadata keeps the true one.  Neither does a photo whose
+location is itself marked private.
 
 Every published location is also rounded, to C<location_precision> decimal
 places (3 by default, which is about 100 meters).  That's plenty for a map
@@ -108,6 +109,7 @@ publishes a location must get it here.
 sub public_location ($self, $photo) {
   my $loc = $photo->location;
   return unless $loc;
+  return if $loc->{private};
 
   # The zone check uses the true location, so rounding can't move a photo
   # out of a zone.

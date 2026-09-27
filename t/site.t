@@ -63,9 +63,9 @@ sub site_with_config ($config) {
   return Jiggle::Site->new({ library => $library });
 }
 
-sub at ($lat, $lon) {
+sub at ($lat, $lon, %extra) {
   Jiggle::Photo->new({
-    id => 'x', location => { lat => $lat, lon => $lon },
+    id => 'x', location => { lat => $lat, lon => $lon, %extra },
     original => { ext => 'jpg', width => 1, height => 1 },
   });
 }
@@ -77,6 +77,8 @@ subtest 'private zones' => sub {
 
   location_published_is('inside zone',  $site, at(40.001, -75.001), undef);
   location_published_is('outside zone', $site, at(40.01, -75.0), { lat => 40.01, lon => -75.0 });
+  location_published_is('marked private, far from any zone', $site,
+    at(48.2, 16.37, private => 1), undef);
 };
 
 subtest 'published locations are rounded' => sub {
