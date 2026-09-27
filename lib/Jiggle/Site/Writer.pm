@@ -96,12 +96,18 @@ sub link_file ($self, $rel, $source) {
 
 =method prune
 
+  $writer->prune;
+  $writer->prune({ except => 'pagefind/' });
+  $writer->prune({ only   => 'pagefind/' });
+
 This removes every file under the root that wasn't produced during this run,
-then removes any directories left empty.
+then removes any directories left empty.  C<except> and C<only> take a path
+prefix, and limit pruning to files outside or inside it.  That lets a build
+prune in two passes, around a step that reads the output tree.
 
 =cut
 
-sub prune ($self) {
+sub prune ($self, $arg = {}) {
   my @dirs;
 
   my $iter = $self->root->iterator({ recurse => 1 });
@@ -113,6 +119,9 @@ sub prune ($self) {
 
     my $rel = $path->relative($self->root)->stringify;
     next if $self->_produced->{$rel};
+
+    next if defined $arg->{except} and index($rel, $arg->{except}) == 0;
+    next if defined $arg->{only}   and index($rel, $arg->{only})   != 0;
 
     $path->remove;
     $self->stats->{pruned}++;
