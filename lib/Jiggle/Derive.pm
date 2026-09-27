@@ -5,7 +5,9 @@ use Moo;
 
 use JSON::MaybeXS ();
 use List::Util ();
+use Jiggle::Progress;
 use Parallel::ForkManager;
+use Path::Tiny ();
 
 =head1 NAME
 
@@ -134,6 +136,12 @@ sub derive_photos ($self, @photos) {
 
   $self->logger->(sprintf "deriving renditions for %d photo(s)", 0 + @work);
 
+  my $progress = Jiggle::Progress->new({
+    label  => 'renditions',
+    total  => scalar @work,
+    logger => $self->logger,
+  });
+
   my $made = 0;
   my @failed;
 
@@ -144,24 +152,64 @@ sub derive_photos ($self, @photos) {
     } else {
       $made += $data->{made};
     }
+
+    if ($data and $data->{warnings} and $data->{warnings}->@*) {
+      $self->logger->("warning: $id: $_") for $data->{warnings}->@*;
+      $self->_warned->{$id} = $data->{warnings};
+    }
+
+    $progress->tick;
   });
 
   for my $photo (@work) {
     $pm->start($photo->id) and next;
 
+    # libvips and ffmpeg report damaged originals (a truncated JPEG, say) as
+    # warnings on stderr, and carry on.  Each photo's are collected here, so
+    # they can be reported by photo instead of lost in interleaved output.
+    # -- claude, 2026-09-27
+    my $errors = Path::Tiny->tempfile;
+    open STDERR, '>', "$errors" or die "can't redirect stderr: $!";
+
     my $n = eval { $self->_derive_one($photo) };
+    my $error = $@;
+    my @warnings = _warnings_from($errors);
+
     unless (defined $n) {
-      warn "error deriving " . $photo->id . ": $@";
-      $pm->finish(1);
+      $pm->finish(1, { warnings => [ @warnings, "error: $error" ] });
     }
 
-    $pm->finish(0, { made => $n });
+    $pm->finish(0, { made => $n, warnings => \@warnings });
   }
 
   $pm->wait_all_children;
+  $progress->done;
+
+  my $warned = keys $self->_warned->%*;
+  $self->logger->("$warned photo(s) had warnings; see above") if $warned;
 
   die "failed to derive: @failed\n" if @failed;
   return $made;
+}
+
+=method warnings
+
+This returns a hash of the warnings from the last C<derive_photos>, keyed by
+photo id.
+
+=cut
+
+has _warned => (is => 'ro', init_arg => undef, default => sub { {} });
+
+sub warnings ($self) { $self->_warned->%* }
+
+# The distinct messages in a stderr capture, without libvips's prefix of
+# program, pid, and time.
+sub _warnings_from ($file) {
+  my %seen;
+  return grep {; length && ! $seen{$_}++ }
+         map  {; s/\A\(\S+:\d+\): (?:VIPS-)?WARNING \*\*: [\d:.]+: //r =~ s/\s+\z//r }
+         $file->lines_utf8;
 }
 
 =method remove_obsolete

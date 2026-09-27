@@ -123,4 +123,25 @@ my @images = qw( h480.webp 500.webp 1024.webp 2048.webp og.jpg );
     type => 'video', size => [ 48, 64 ], published => [ @images, 'video.mp4' ]);
 }
 
+subtest 'a damaged original is reported by photo' => sub {
+  my $file = $tmp->child('src/truncated.jpg');
+  $file->parent->mkpath;
+  run('vips', 'gaussnoise', "$file", 256, 192);
+  my $bytes = $file->slurp_raw;
+  $file->spew_raw(substr $bytes, 0, int(length($bytes) * 0.6));
+
+  my $root = $tmp->child('lib-truncated');
+  $root->child('jiggle.toml')->touchpath;
+  my $library = Jiggle::Library->new({ root => $root });
+  my ($photo) = Jiggle::Ingest->new({ library => $library })->ingest_files($file);
+
+  my $derive = Jiggle::Derive->new({ library => $library, jobs => 1 });
+  $derive->derive_photos($photo);
+
+  my %warnings = $derive->warnings;
+  ok($warnings{ $photo->id }, 'the photo has warnings');
+  like(join("\n", ($warnings{ $photo->id } // [])->@*), qr/premature end of JPEG/i,
+    '...saying what went wrong');
+};
+
 done_testing;
