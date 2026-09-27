@@ -1,11 +1,20 @@
 % my ($w, $h) = $site->rendition_size($photo, '2048.webp');
 <article class="photo">
   <figure>
+% if ($photo->is_video) {
+%   my ($vw, $vh) = $site->rendition_size($photo, 'video.mp4');
+    <video controls playsinline preload="metadata"
+           poster="<%= $site->rendition_url($photo, '2048.webp') %>"
+           width="<%= $vw %>" height="<%= $vh %>">
+      <source src="<%= $site->rendition_url($photo, 'video.mp4') %>" type="video/mp4">
+    </video>
+% } else {
     <img src="<%= $site->rendition_url($photo, '1024.webp') %>"
          srcset="<%= $site->srcset($photo) %>"
          sizes="(max-width: 1200px) 100vw, 1200px"
          width="<%= $w %>" height="<%= $h %>"
          alt="<%= $site->display_title($photo) %>">
+% }
   </figure>
   <nav class="neighbors">
 % if ($newer) {

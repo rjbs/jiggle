@@ -7,13 +7,19 @@
 <title><%= $page_title %></title>
 <link rel="stylesheet" href="/static/jiggle.css">
 % if ($og) {
-<meta property="og:type" content="website">
+<meta property="og:type" content="<%= $og->{video} ? 'video.other' : 'website' %>">
 <meta property="og:site_name" content="<%= $site->site_title %>">
 <meta property="og:title" content="<%= $og->{title} %>">
 <meta property="og:url" content="<%= $og->{url} %>">
 <meta property="og:image" content="<%= $og->{image} %>">
 <meta property="og:image:width" content="<%= $og->{width} %>">
 <meta property="og:image:height" content="<%= $og->{height} %>">
+%   if (my $v = $og->{video}) {
+<meta property="og:video" content="<%= $v->{url} %>">
+<meta property="og:video:type" content="video/mp4">
+<meta property="og:video:width" content="<%= $v->{width} %>">
+<meta property="og:video:height" content="<%= $v->{height} %>">
+%   }
 %   if (length $og->{description}) {
 <meta property="og:description" content="<%= $og->{description} %>">
 <meta name="description" content="<%= $og->{description} %>">

@@ -139,9 +139,24 @@ recording, per rendition, the original's SHA-256 and the recipe version that
 produced it.  A rendition is rebuilt only when either has changed.  Bumping a
 recipe's version regenerates just that rendition across the library.
 
-Video (later): the original is kept; the published rendition is H.264 MP4
-with `+faststart`, downscaled if large, plus a poster frame.  Phone
-"more compatible" MOVs are already H.264, so this is often just a remux.
+**Video** (#3): the original is kept.  A poster frame (`poster.png`, taken
+about a second in, and never published) is extracted with ffmpeg, and the
+usual image renditions are made from it.  The published `video.mp4` is
+re-encoded with ffmpeg:
+
+* H.264 (CRF 23) and stereo AAC, fit within 1920×1920
+* rotated upright; phones store portrait clips as landscape plus a flag
+* only the first video and audio streams; iPhones add spatial audio and
+  timed metadata tracks that browsers can't use
+* no metadata at all, which removes GPS
+* `+faststart`, so playback starts before the download finishes
+
+Re-encoding rather than remuxing is worth it: iPhone "more compatible" clips
+are H.264 already, but at about 15 Mbit/s; the web versions come out 3–5
+times smaller.
+
+Video pages use `<video>` with the 2048 rendition as its poster, plus
+`og:video` tags; grid tiles for videos get a play badge.
 
 ## Building the site
 
@@ -226,8 +241,11 @@ Policies:
 * the date comes from `DateTimeOriginal` plus `OffsetTimeOriginal` when
   present; a file with no date is ingested anyway and flagged by `fsck`
 * file type is detected from content, not extension
-* Live Photos (JPG + MOV with the same basename): a policy is needed before
-  ingest handles MOVs at all
+* Live Photos (a JPG plus a short MOV sharing a content identifier): until
+  there's a policy, ingest skips the MOV half, recognizing it by its
+  `ContentIdentifier` tag, rather than making it a video of its own
+* a video's date comes from QuickTime's `CreationDate`, which has an offset;
+  `CreateDate` is UTC, so it's used only as a fallback, marked with `Z`
 
 Later, a local editor: a Mojolicious app on localhost, reading and writing the
 same TOML files, for the part Finder is bad at, such as selecting a dozen

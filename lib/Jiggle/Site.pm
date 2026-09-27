@@ -270,6 +270,16 @@ sub opengraph ($self, $photo) {
     width  => $w,
     height => $h,
     description => $self->excerpt($photo->description),
+    video  => ($photo->is_video ? $self->_opengraph_video($photo) : undef),
+  };
+}
+
+sub _opengraph_video ($self, $photo) {
+  my ($w, $h) = $self->rendition_size($photo, 'video.mp4');
+  return {
+    url    => $self->absolute_url($self->rendition_url($photo, 'video.mp4')),
+    width  => $w,
+    height => $h,
   };
 }
 
@@ -317,7 +327,7 @@ sub build ($self) {
       albums   => $self->albums_for($photo),
     });
 
-    for my $recipe (Jiggle::Derive->recipes) {
+    for my $recipe (Jiggle::Derive->published_recipes_for($photo)) {
       my $source = $self->library->derived_path($id, $recipe->{name});
       die "missing rendition $source\n" unless -e $source;
       $w->link_file("p/$id/$recipe->{name}", $source);
