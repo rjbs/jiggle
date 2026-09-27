@@ -8,6 +8,7 @@ use Digest::SHA ();
 use Jiggle::Ingest;
 use Jiggle::Library;
 use Path::Tiny ();
+use Time::Local ();
 
 plan skip_all => 'vips is needed to make test images'
   unless system('vips --version >/dev/null 2>&1') == 0;
@@ -35,6 +36,13 @@ sub ingest_ok ($desc, $library, $files, $want_ids) {
   is_deeply(\@got, $want_ids, $desc);
 }
 
+sub epoch_of ($datetime) {
+  my ($y, $mo, $d, $h, $mi, $s, $sign, $oh, $om)
+    = $datetime =~ /\A(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)([-+])(\d+):(\d+)\z/;
+  my $offset = ($sign eq '-' ? -1 : 1) * ($oh * 3600 + $om * 60);
+  return Time::Local::timegm($s, $mi, $h, $d, $mo - 1, $y) - $offset;
+}
+
 sub id_of ($file) {
   substr Digest::SHA->new(256)->addfile("$file")->hexdigest, 0, 12;
 }
@@ -56,6 +64,21 @@ subtest 're-ingesting skips what is already there' => sub {
   ingest_ok('first time', $library, [ $a ], [ id_of($a) ]);
   ingest_ok('second time, with a new file too', $library, [ $a, $b ], [ id_of($b) ]);
   ingest_ok('same file twice in one run', new_library(), [ $a, $a ], [ id_of($a) ]);
+};
+
+subtest "the source file's mtime is recorded" => sub {
+  my $file = new_jpeg();
+
+  # 2026-07-19 21:49:45 UTC; how it's written depends on the local zone, so
+  # compare instants rather than strings.
+  my $epoch = 1_784_497_785;
+  utime $epoch, $epoch, "$file";
+
+  my ($photo) = Jiggle::Ingest->new({ library => new_library() })->ingest_files($file);
+  my $recorded = $photo->original->{source_mtime};
+
+  like($recorded, qr/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[-+]\d\d:\d\d\z/, 'a datetime with an offset');
+  is(epoch_of($recorded), $epoch, '...naming the same instant');
 };
 
 subtest 'an id collision is fatal' => sub {

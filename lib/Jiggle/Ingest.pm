@@ -7,6 +7,7 @@ use Digest::SHA ();
 use File::Copy ();
 use Image::ExifTool ();
 use Jiggle::Photo;
+use POSIX ();
 use Path::Tiny ();
 
 =head1 NAME
@@ -105,6 +106,7 @@ sub ingest_files ($self, @paths) {
         ext    => $ext,
         sha256 => $digest,
         bytes  => -s $path,
+        source_mtime => _datetime_with_offset($path->stat->mtime),
         width  => $facts->{width},
         height => $facts->{height},
         (defined $facts->{duration} ? (duration => 0 + $facts->{duration}) : ()),
@@ -133,6 +135,16 @@ sub _install_original ($self, $source, $photo) {
   rename "$tmp", "$dest" or die "can't rename $tmp to $dest: $!";
 
   return;
+}
+
+# An epoch time as a TOML datetime in local time, with the UTC offset in
+# effect at that moment: 2026-07-19T17:49:45-04:00.
+sub _datetime_with_offset ($epoch) {
+  my @t = localtime $epoch;
+  my $datetime = POSIX::strftime('%Y-%m-%dT%H:%M:%S', @t);
+  my $offset   = POSIX::strftime('%z', @t);
+  $offset =~ s/\A([-+]\d\d)(\d\d)\z/$1:$2/;
+  return "$datetime$offset";
 }
 
 sub _facts_for ($self, $path) {

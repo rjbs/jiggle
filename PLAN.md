@@ -66,6 +66,7 @@ sha256      = "…"
 bytes       = 3014470
 width       = 5712               # after applying EXIF orientation
 height      = 4284
+source_mtime = 2026-07-17T11:23:17-04:00   # of the file ingest copied from
 
 [location]
 lat         = 48.1214722

@@ -50,7 +50,10 @@ has visibility => (
 has flickr_id => (is => 'ro');
 
 # { file, ext, sha256, bytes, width, height }, plus duration (in seconds) for
-# a video
+# a video, and source_mtime: the modification time of the file ingest copied
+# from, as a TOML datetime with the ingesting machine's UTC offset.  Nothing
+# uses source_mtime yet; it's kept because it's lost once the source file is
+# gone, and Image Capture sets it to the photo's time in the phone's library.
 has original => (is => 'ro', required => 1);
 
 # { lat, lon } or undef
@@ -125,6 +128,8 @@ sub as_toml ($self) {
   }
   push @lines, sprintf 'duration = %.3f', $self->duration
     if defined $self->duration;
+  push @lines, sprintf 'source_mtime = %s', $self->original->{source_mtime}
+    if defined $self->original->{source_mtime};
 
   if (my $loc = $self->location) {
     push @lines, q{}, '[location]';

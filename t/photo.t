@@ -60,6 +60,12 @@ round_trips_ok('everything',
 
 round_trips_ok('local datetime', taken => '2026-07-17T17:23:17');
 
+round_trips_ok('source mtime', original => {
+  file => 'IMG_9971.JPG', ext => 'jpg', sha256 => 'f' x 64,
+  bytes => 1000, width => 4000, height => 3000,
+  source_mtime => '2026-07-19T17:49:45-04:00',
+});
+
 round_trips_ok('awkward strings',
   title       => qq{"Quoted" \\ back/slash \x{263A}},
   description => qq{Line one,\nline "two" and ""three"",\n\\n is literal\nends with "},
