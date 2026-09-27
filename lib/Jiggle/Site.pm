@@ -51,6 +51,10 @@ has share_dir => (
 
 has logger => (is => 'ro', default => sub { sub { } });
 
+# A Jiggle::Search, or undef to build without a search index.  (The search
+# page is still written; it just won't find anything.)
+has search => (is => 'ro');
+
 has config => (is => 'lazy', default => sub ($self) { $self->library->config });
 
 sub site_title ($self) { $self->config->{title}    // 'Photos' }
@@ -458,7 +462,18 @@ sub build ($self) {
   $self->_write_page('map/index.html', 'map', { title => 'Map' });
   $w->write_file('map/photos.geojson', $JSON->encode($self->_geojson));
 
+  $self->_write_page('search/index.html', 'search', { title => 'Search' });
+
   $self->_copy_static;
+
+  if (my $search = $self->search) {
+    # Pagefind indexes whatever HTML is in the output, so stale pages (like
+    # one for a photo just made private) must be pruned before it runs.  The
+    # old index is kept until the new one is written, so unchanged index
+    # files are left alone.  -- claude, 2026-09-27
+    $w->prune({ except => 'pagefind/' });
+    $search->index_site($self->out_dir, $w);
+  }
 
   $w->prune;
 

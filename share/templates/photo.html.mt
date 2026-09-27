@@ -1,5 +1,5 @@
 % my ($w, $h) = $site->rendition_size($photo, '2048.webp');
-<article class="photo">
+<article class="photo" data-pagefind-body data-pagefind-meta="image:<%= $site->rendition_url($photo, 'h480.webp') %>">
   <figure>
 % if ($photo->is_video) {
 %   my ($vw, $vh) = $site->rendition_size($photo, 'video.mp4');
@@ -17,7 +17,7 @@
          alt="<%= $site->display_title($photo) %>">
 % }
   </figure>
-  <nav class="neighbors">
+  <nav class="neighbors" data-pagefind-ignore>
 % if ($newer) {
     <a rel="prev" href="<%= $site->photo_url($newer) %>">&larr; newer</a>
 % }
@@ -33,7 +33,7 @@
     <dl class="photo-meta">
 % if (defined $photo->taken) {
 %   my $month = $site->month_of($photo);
-      <dt>Taken</dt>
+      <dt data-pagefind-ignore>Taken</dt>
       <dd>
 %   if ($month) {
         <a href="<%= $site->month_url(@$month) %>"><%= $site->display_date($photo) %></a>
@@ -43,7 +43,7 @@
       </dd>
 % }
 % if (@$albums) {
-      <dt>Albums</dt>
+      <dt data-pagefind-ignore>Albums</dt>
       <dd>
 %   for my $album (@$albums) {
         <a href="/albums/<%= $album->{slug} %>/"><%= $album->{title} %></a>
@@ -51,7 +51,7 @@
       </dd>
 % }
 % if ($photo->tags->@*) {
-      <dt>Tags</dt>
+      <dt data-pagefind-ignore>Tags</dt>
       <dd class="tags">
 %   for my $tag ($photo->tags->@*) {
         <a href="/tags/<%= $site->tag_slug($tag) %>/"><%= $tag %></a>

@@ -1,0 +1,84 @@
+use v5.36;
+
+use Test::More;
+
+use lib 'lib', 't/lib';
+
+use IO::Uncompress::Gunzip ();
+use JSON::MaybeXS ();
+use Jiggle::Search;
+use Jiggle::Site;
+use Jiggle::TestLibrary;
+
+my $search = Jiggle::Search->new;
+
+plan skip_all => 'Pagefind is needed (it runs via npx, which may need the network once)'
+  unless system(join(' ', $search->command->@*, '--version', '>/dev/null 2>&1')) == 0;
+
+# Every search fragment in a built site, as { url => content }.  A fragment is
+# gzipped JSON after a short signature.
+sub indexed ($dir) {
+  my %indexed;
+  for my $file ($dir->child('pagefind/fragment')->children) {
+    IO::Uncompress::Gunzip::gunzip("$file", \my $raw)
+      or die "can't gunzip $file: $IO::Uncompress::Gunzip::GunzipError";
+    $raw =~ s/\Apagefind_dcd//;
+    my $fragment = JSON::MaybeXS::decode_json($raw);
+    $indexed{ $fragment->{url} } = $fragment->{content};
+  }
+  return \%indexed;
+}
+
+sub indexed_urls_are ($desc, $dir, $want) {
+  is_deeply([ sort keys indexed($dir)->%* ], [ sort @$want ], $desc);
+}
+
+sub rebuild ($library) {
+  my $site = Jiggle::Site->new({ library => $library, search => $search });
+  $site->build;
+  return $site;
+}
+
+subtest 'only public photo pages are indexed' => sub {
+  my ($site, $dir) = built_site(
+    photos => [
+      { id => 'pub00001', title => 'Stephansdom', tags => [ 'church' ] },
+      { id => 'priv0001', title => 'Secret', visibility => 'private' },
+    ],
+    site => { search => $search },
+  );
+
+  indexed_urls_are('photo pages, and nothing else', $dir, [ '/p/pub00001/' ]);
+  like(indexed($dir)->{'/p/pub00001/'}, qr/Stephansdom.*church/, 'title and tags indexed');
+  unlike(indexed($dir)->{'/p/pub00001/'}, qr/\bTags\b/, 'labels are not indexed');
+};
+
+subtest 'a photo made private leaves the index' => sub {
+  my ($site, $dir, $library) = built_site(
+    photos => [ { id => 'aaaa0001' }, { id => 'bbbb0001' } ],
+    site   => { search => $search },
+  );
+  indexed_urls_are('both indexed at first', $dir, [ '/p/aaaa0001/', '/p/bbbb0001/' ]);
+
+  # Change the photo's metadata on disk, as a person would, then rebuild with
+  # a fresh library object.  The stale page is still in site/ when the build
+  # starts, which is exactly the case that matters.
+  my $meta = $library->meta_path('bbbb0001');
+  $meta->spew_utf8($meta->slurp_utf8 =~ s/^visibility = "public"/visibility = "private"/mr);
+
+  rebuild(Jiggle::Library->new({ root => $library->root }));
+  indexed_urls_are('only the public one remains', $dir, [ '/p/aaaa0001/' ]);
+};
+
+subtest 'an unchanged site rewrites no index files' => sub {
+  my ($site, $dir, $library) = built_site(
+    photos => [ { id => 'cccc0001', title => 'Unchanging' } ],
+    site   => { search => $search },
+  );
+
+  my $again = rebuild(Jiggle::Library->new({ root => $library->root }));
+  is($again->writer->stats->{written}, 0, 'nothing written');
+  is($again->writer->stats->{pruned},  0, 'nothing pruned');
+};
+
+done_testing;

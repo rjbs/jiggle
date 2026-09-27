@@ -245,6 +245,22 @@ zone check.
 Pagefind, run over `site/` after the build.  It produces a static index split
 into chunks, so a search downloads only what it needs.
 
+* Only photo pages are indexed (`data-pagefind-body`): title, description,
+  date, albums, and tags.  Navigation and labels are excluded.  Results show
+  the `h480` rendition.
+* `/search/` uses Pagefind's stock UI, themed with the site's colors.  The
+  header's search box submits to it as `?q=`.
+* Pagefind is pinned (`Jiggle::Search::$PAGEFIND_VERSION`) and runs from
+  `PATH` if installed, otherwise via `npx`.  `jiggle build --no-search` skips
+  it.
+* Its output is deterministic, with content-named chunks, so it goes into
+  `site/pagefind/` through the writer, and an unchanged site rewrites no index
+  files.
+* **Privacy:** Pagefind indexes whatever HTML is in `site/`, so the build
+  prunes stale pages (say, of a photo just made private) *before* indexing,
+  keeping only the old index until the new one replaces it.  A test covers
+  exactly this case.
+
 ### OpenGraph
 
 Each photo page gets `og:title`, `og:description`, `og:image` (the `og.jpg`

@@ -41,6 +41,9 @@
     <a href="/archive/">Archive</a>
     <a href="/map/">Map</a>
   </nav>
+  <form class="site-search" action="/search/" method="get" role="search">
+    <input type="search" name="q" placeholder="Search" aria-label="Search photos">
+  </form>
 </header>
 <main>
 <%= $content %>
