@@ -62,65 +62,98 @@ skipped, with a message sent to the logger.
 =cut
 
 sub ingest_files ($self, @paths) {
-  my @photos;
+  return map {; $_->{status} eq 'ingested' ? $_->{photo} : () }
+         map {; $self->ingest_file($_) } @paths;
+}
 
-  for my $path (map {; Path::Tiny::path($_) } @paths) {
-    my $digest = Digest::SHA->new(256)->addfile("$path")->hexdigest;
-    my $id     = $self->library->id_for_digest($digest);
+=method ingest_file
 
-    if (-e (my $meta = $self->library->meta_path($id))) {
-      my $existing = Jiggle::Photo->from_toml_file($meta);
+  my $result = $ingest->ingest_file($path, \%arg);
 
-      die "id collision: $path and photo $id have different digests\n"
-        unless $existing->sha256 eq $digest;
+This ingests one file, and returns a hash describing what happened:
 
-      $self->logger->("skip $path: already in library as $id");
-      next;
-    }
+  { status => 'ingested', id => $id, photo => $photo }
+  { status => 'exists',   id => $id }    # already in the library
+  { status => 'skipped',  reason => $why }
 
-    my $facts = $self->_facts_for($path);
+The optional arguments are for importers, which know more about a file than
+its EXIF data does:
 
-    my $media = $MEDIA_FOR_TYPE{ $facts->{type} // '' };
-    unless ($media) {
-      $self->logger->("skip $path: unsupported type " . ($facts->{type} // 'unknown'));
-      next;
-    }
+=for :list
+* metadata
+A code reference, called with the facts read from the file (as a hash
+reference: C<taken>, C<location>, C<width>, and so on).  It returns a hash
+reference of L<Jiggle::Photo> attributes, which are used in place of the
+defaults: C<title>, C<taken>, C<tags>, and so on.
+* record_source_mtime
+If false, C<source_mtime> isn't recorded.  Default: true.  An importer whose
+files' mtimes mean nothing (like a download's) should turn this off.
 
-    my ($kind, $ext) = @$media;
+=cut
 
-    # A Live Photo is a still plus a short clip, sharing a content identifier.
-    # Until there's a policy for them, the clip is skipped rather than being
-    # ingested as a video of its own.
-    if ($facts->{live_photo}) {
-      $self->logger->("skip $path: Live Photo motion, not yet supported");
-      next;
-    }
+sub ingest_file ($self, $path, $arg = {}) {
+  $path = Path::Tiny::path($path);
 
-    my $photo = Jiggle::Photo->new({
-      id    => $id,
-      type  => $kind,
-      taken => $facts->{taken},
-      ($facts->{location} ? (location => $facts->{location}) : ()),
-      original => {
-        file   => $path->basename,
-        ext    => $ext,
-        sha256 => $digest,
-        bytes  => -s $path,
-        source_mtime => _datetime_with_offset($path->stat->mtime),
-        width  => $facts->{width},
-        height => $facts->{height},
-        (defined $facts->{duration} ? (duration => 0 + $facts->{duration}) : ()),
-      },
-    });
+  my $digest = Digest::SHA->new(256)->addfile("$path")->hexdigest;
+  my $id     = $self->library->id_for_digest($digest);
 
-    $self->_install_original($path, $photo);
-    $self->library->add_photo($photo);
+  if (-e (my $meta = $self->library->meta_path($id))) {
+    my $existing = Jiggle::Photo->from_toml_file($meta);
 
-    $self->logger->("ingest $path as " . $photo->id);
-    push @photos, $photo;
+    die "id collision: $path and photo $id have different digests\n"
+      unless $existing->sha256 eq $digest;
+
+    $self->logger->("skip $path: already in library as $id");
+    return { status => 'exists', id => $id };
   }
 
-  return @photos;
+  my $facts = $self->_facts_for($path);
+
+  my $media = $MEDIA_FOR_TYPE{ $facts->{type} // '' };
+  unless ($media) {
+    my $reason = 'unsupported type ' . ($facts->{type} // 'unknown');
+    $self->logger->("skip $path: $reason");
+    return { status => 'skipped', reason => $reason };
+  }
+
+  my ($kind, $ext) = @$media;
+
+  # A Live Photo is a still plus a short clip, sharing a content identifier.
+  # Until there's a policy for them, the clip is skipped rather than being
+  # ingested as a video of its own.
+  if ($facts->{live_photo}) {
+    my $reason = 'Live Photo motion, not yet supported';
+    $self->logger->("skip $path: $reason");
+    return { status => 'skipped', reason => $reason };
+  }
+
+  my $extra = $arg->{metadata} ? $arg->{metadata}->($facts) : {};
+
+  my $photo = Jiggle::Photo->new({
+    type  => $kind,
+    taken => $facts->{taken},
+    ($facts->{location} ? (location => $facts->{location}) : ()),
+    %$extra,
+    id    => $id,
+    original => {
+      file   => $path->basename,
+      ext    => $ext,
+      sha256 => $digest,
+      bytes  => -s $path,
+      (($arg->{record_source_mtime} // 1)
+        ? (source_mtime => _datetime_with_offset($path->stat->mtime))
+        : ()),
+      width  => $facts->{width},
+      height => $facts->{height},
+      (defined $facts->{duration} ? (duration => 0 + $facts->{duration}) : ()),
+    },
+  });
+
+  $self->_install_original($path, $photo);
+  $self->library->add_photo($photo);
+
+  $self->logger->("ingest $path as $id");
+  return { status => 'ingested', id => $id, photo => $photo };
 }
 
 sub _install_original ($self, $source, $photo) {
