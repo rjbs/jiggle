@@ -1,0 +1,126 @@
+use v5.36;
+
+use Test::More;
+
+use lib 'lib';
+
+use Image::ExifTool ();
+use Jiggle::Derive;
+use Jiggle::Ingest;
+use Jiggle::Library;
+use Path::Tiny ();
+
+for my $tool (qw( vips ffmpeg exiftool )) {
+  plan skip_all => "$tool is needed to make test media"
+    unless system("$tool -ver >/dev/null 2>&1") == 0
+        || system("$tool --version >/dev/null 2>&1") == 0
+        || system("$tool -version >/dev/null 2>&1") == 0;
+}
+
+my $tmp = Path::Tiny->tempdir;
+
+sub run (@cmd) { system(@cmd) == 0 or die "command failed: @cmd\n" }
+
+# A 64x48 JPEG with GPS in its EXIF.
+sub jpeg_with_gps {
+  my $file = $tmp->child('src/photo.jpg');
+  $file->parent->mkpath;
+  run('vips', 'black', "$file", 64, 48);
+  run(qw( exiftool -q -overwrite_original ),
+    '-GPSLatitude=52.5287', '-GPSLatitudeRef=N',
+    '-GPSLongitude=13.3712', '-GPSLongitudeRef=E',
+    "$file");
+  return $file;
+}
+
+# A one-second 64x48 clip, flagged as rotated 90 degrees the way a phone
+# flags a portrait video, with GPS in both of the places video files keep it:
+# Apple's metadata keys (which ffmpeg happens to drop when writing MP4), and
+# the older ©xyz location atom used by Android and many cameras (which
+# ffmpeg would copy, if not told to strip metadata).
+sub rotated_mov_with_gps {
+  my $file = $tmp->child('src/clip.mov');
+  $file->parent->mkpath;
+  run(qw( ffmpeg -nostdin -loglevel error -y ),
+    qw( -f lavfi -i testsrc=size=64x48:rate=10:duration=1 ),
+    qw( -f lavfi -i sine=duration=1 ),
+    qw( -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest ),
+    '-metadata', 'location=+52.5287+013.3712/',
+    "$file");
+  run(qw( exiftool -q -overwrite_original ),
+    '-Rotation=90', '-Keys:GPSCoordinates=52.5287 13.3712',
+    "$file");
+  return $file;
+}
+
+sub derived_library ($file) {
+  my $root = $tmp->child('lib-' . $file->basename);
+  $root->child('jiggle.toml')->touchpath;
+  my $library = Jiggle::Library->new({ root => $root });
+
+  my ($photo) = Jiggle::Ingest->new({ library => $library })->ingest_files($file);
+  Jiggle::Derive->new({ library => $library, jobs => 1 })->derive_photos($photo);
+
+  return ($library, $photo);
+}
+
+sub has_location ($file) {
+  my $info = Image::ExifTool::ImageInfo("$file", 'GPS*', 'Location*');
+  return scalar grep {; ! /^(Error|Warning)/ } keys %$info;
+}
+
+sub size_of ($file) {
+  my $info = Image::ExifTool::ImageInfo("$file", qw( ImageWidth ImageHeight Rotation ));
+  my ($w, $h) = @$info{qw( ImageWidth ImageHeight )};
+  ($w, $h) = ($h, $w) if ($info->{Rotation} // 0) % 180;
+  return [ $w, $h ];
+}
+
+sub renditions_ok ($desc, $library, $photo, %want) {
+  subtest $desc => sub {
+    is($photo->type, $want{type}, 'type');
+    is_deeply([ $photo->width, $photo->height ], $want{size}, 'upright size recorded');
+
+    my $dir = $library->derived_path($photo->id);
+
+    for my $recipe (Jiggle::Derive->recipes_for($photo)) {
+      my $file = $dir->child($recipe->{name});
+      ok(-e $file, "$recipe->{name} made") or next;
+
+      next unless $recipe->{publish} // 1;
+
+      ok(! has_location($file), "$recipe->{name} has no location");
+      is_deeply(
+        size_of($file),
+        [ Jiggle::Derive->rendition_size($photo, $recipe->{name}) ],
+        "$recipe->{name} has the computed size",
+      );
+    }
+
+    is_deeply(
+      [ sort map {; $_->{name} } Jiggle::Derive->published_recipes_for($photo) ],
+      [ sort $want{published}->@* ],
+      'published renditions',
+    );
+  };
+}
+
+my @images = qw( h480.webp 500.webp 1024.webp 2048.webp og.jpg );
+
+{
+  my $src = jpeg_with_gps();
+  ok(has_location($src), 'test photo really has a location');
+
+  renditions_ok('photo', derived_library($src),
+    type => 'photo', size => [ 64, 48 ], published => \@images);
+}
+
+{
+  my $src = rotated_mov_with_gps();
+  ok(has_location($src), 'test video really has a location');
+
+  renditions_ok('rotated video', derived_library($src),
+    type => 'video', size => [ 48, 64 ], published => [ @images, 'video.mp4' ]);
+}
+
+done_testing;
