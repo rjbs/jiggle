@@ -31,6 +31,13 @@ sub execute ($self, $opt, $args) {
     $path->merge('index.html') if $path->trailing_slash || "$path" eq '/';
   });
 
+  # Without Cache-Control, a browser may guess how long its copy of a file
+  # stays fresh, and go on using a stale stylesheet after a rebuild.  For
+  # previewing, always revalidate; an unchanged file costs only a 304.
+  $app->hook(after_static => sub ($c) {
+    $c->res->headers->cache_control('no-cache');
+  });
+
   $app->routes->any('/*whatever' => { whatever => '' } => sub ($c) {
     $c->render(text => 'not found', status => 404);
   });
