@@ -180,8 +180,18 @@ are never linked into `site/`.
   date, tags, albums, small map, OpenGraph tags
 * `/albums/` and `/albums/<slug>/`
 * `/tags/` and `/tags/<tag>/`
+* `/archive/` — every year, with a count and a sample of photos
+* `/<year>/` — each month of the year, with a sample; `/<year>/<month>/` —
+  every photo from that month, oldest first; `/archive/undated/`
 * `/map/` — every located photo
 * `/search/`
+
+The archive (#4) is how every photo stays reachable without a paged
+photostream.  A paged stream would work badly with write-if-changed: one new
+photo shifts every page, so every page would be re-uploaded.  With archives,
+a new photo changes only its own month, its year, and the indexes.  Photos
+are filed by the date on the clock where they were taken.  (Dynamic loading
+from a JSON index per month is a possible later improvement.)
 
 Large tag pages may need pagination eventually; `loading="lazy"` on
 thumbnails goes a long way first.

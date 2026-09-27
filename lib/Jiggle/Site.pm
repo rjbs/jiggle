@@ -165,8 +165,92 @@ has tags => (
   },
 );
 
+my @MONTHS = qw(
+  January February March April May June July
+  August September October November December
+);
+
+=method archive
+
+This returns the photos grouped by the date they were taken:
+
+  {
+    years   => [ { year => 2026, count => 38, months => [ ... ] }, ... ],
+    undated => [ @photos ],
+  }
+
+Years are newest first, and so are the months within each year.  Each month
+is C<< { year, month, photos } >>, with its photos oldest first, so that a
+trip reads in order.
+
+Photos are filed by the date on the local clock where they were taken, which
+is how a person remembers them: a photo taken at 23:30 on 31 July in Vienna
+belongs to July, even though it was already August in UTC.
+
+=cut
+
+has archive => (
+  is => 'lazy',
+  init_arg => undef,
+  default  => sub ($self) {
+    my (%by_month, @undated);
+
+    # $self->photos is newest first, so reversing it gives oldest first
+    # within each month.
+    for my $photo (reverse $self->photos->@*) {
+      my ($y, $m) = ($photo->taken // '') =~ /\A(\d{4})-(\d\d)-/;
+      if ($y) { push $by_month{$y}{$m}->@*, $photo }
+      else    { unshift @undated, $photo }
+    }
+
+    my @years = map {;
+      my $y = $_;
+      my @months = map {;
+        { year => $y, month => $_, photos => $by_month{$y}{$_} }
+      } sort { $b cmp $a } keys $by_month{$y}->%*;
+
+      {
+        year   => $y,
+        count  => List::Util::sum(map {; scalar $_->{photos}->@* } @months),
+        months => \@months,
+      };
+    } sort { $b cmp $a } keys %by_month;
+
+    return { years => \@years, undated => \@undated };
+  },
+);
+
+sub _all_months ($self) {
+  map {; $_->{months}->@* } $self->archive->{years}->@*;
+}
+
+=method sample
+
+  my @few = $site->sample($n, @photos);
+
+This returns up to C<$n> of the given photos, spread evenly through the list
+and kept in order, for showing a preview of a year or month.
+
+=cut
+
+sub sample ($self, $n, @photos) {
+  return @photos if @photos <= $n;
+  return map {; $photos[ int($_ * @photos / $n) ] } 0 .. $n - 1;
+}
+
 #---------------------------------------------------------------------------
 # Helpers for templates.
+
+sub year_url  ($self, $year)        { "/$year/" }
+sub month_url ($self, $year, $mon)  { "/$year/$mon/" }
+
+sub month_name ($self, $mon) { $MONTHS[$mon - 1] }
+
+# The archive month a photo belongs to, as [ year, month ], or nothing.
+sub month_of ($self, $photo) {
+  my ($y, $m) = ($photo->taken // '') =~ /\A(\d{4})-(\d\d)-/;
+  return $y ? [ $y, $m ] : undef;
+}
 
 sub photo_url ($self, $photo) { '/p/' . $photo->id . '/' }
 
@@ -184,11 +268,6 @@ sub srcset ($self, $photo) {
 sub rendition_size ($self, $photo, $name) {
   Jiggle::Derive->rendition_size($photo, $name);
 }
-
-my @MONTHS = qw(
-  January February March April May June July
-  August September October November December
-);
 
 sub display_date ($self, $photo) {
   my $taken = $photo->taken // return '';
@@ -358,6 +437,8 @@ sub build ($self) {
     });
   }
 
+  $self->_build_archive;
+
   $self->_write_page('map/index.html', 'map', { title => 'Map' });
   $w->write_file('map/photos.geojson', $JSON->encode($self->_geojson));
 
@@ -370,6 +451,49 @@ sub build ($self) {
     '%d public photo(s); %d file(s) written, %d unchanged, %d linked, %d pruned',
     0 + @photos, @$s{qw( written unchanged linked pruned )},
   );
+
+  return;
+}
+
+sub _build_archive ($self) {
+  my $archive = $self->archive;
+  my @years   = $archive->{years}->@*;
+
+  $self->_write_page('archive/index.html', 'archive', {
+    title   => 'Archive',
+    years   => \@years,
+    undated => $archive->{undated},
+  });
+
+  if ($archive->{undated}->@*) {
+    $self->_write_page('archive/undated/index.html', 'undated', {
+      title  => 'Undated',
+      photos => $archive->{undated},
+    });
+  }
+
+  # Years and months are newest first, so the "newer" neighbor of each is the
+  # one before it in the list.
+  for my $i (keys @years) {
+    my $year = $years[$i];
+    $self->_write_page("$year->{year}/index.html", 'year', {
+      title => $year->{year},
+      year  => $year,
+      newer => ($i > 0 ? $years[$i - 1] : undef),
+      older => $years[$i + 1],
+    });
+  }
+
+  my @months = $self->_all_months;
+  for my $i (keys @months) {
+    my $month = $months[$i];
+    $self->_write_page("$month->{year}/$month->{month}/index.html", 'month', {
+      title => $self->month_name($month->{month}) . " $month->{year}",
+      month => $month,
+      newer => ($i > 0 ? $months[$i - 1] : undef),
+      older => $months[$i + 1],
+    });
+  }
 
   return;
 }

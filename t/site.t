@@ -160,4 +160,59 @@ subtest 'rebuilding changes nothing, and pruning removes the stale' => sub {
   ok(! -e $dir->child('p/zzzz0001'), 'stale file and its directory pruned');
 };
 
+# The ids linked from a page, in page order, each counted once.
+sub photo_ids_on ($file) {
+  my %seen;
+  return grep {; ! $seen{$_}++ } $file->slurp_utf8 =~ m{href="/p/([^/"]+)/"}g;
+}
+
+sub page_lists_ok ($desc, $dir, $page, $want_ids) {
+  my $file = $dir->child($page);
+  ok(-e $file, "$desc: $page exists") or return;
+  is_deeply([ photo_ids_on($file) ], $want_ids, "$desc: photos on $page");
+}
+
+sub page_links_ok ($desc, $dir, $page, @hrefs) {
+  my $html = $dir->child($page)->slurp_utf8;
+  for my $href (@hrefs) {
+    like($html, qr/href="\Q$href\E"/, "$desc: $page links to $href");
+  }
+}
+
+subtest 'archive by year and month' => sub {
+  my ($site, $dir) = built_site(
+    photos => [
+      { id => 'jul1', taken => '2026-07-01T09:00:00+02:00' },
+      { id => 'jul2', taken => '2026-07-20T09:00:00+02:00' },
+      # Late on the 31st, local time: August in UTC, but filed under July.
+      { id => 'jul3', taken => '2026-07-31T23:30:00+02:00' },
+      { id => 'aug1', taken => '2026-08-02T09:00:00' },
+      { id => 'old1', taken => '2018-08-13T08:59:43-04:00' },
+      { id => 'nodt' },
+      { id => 'priv', taken => '2026-07-10T09:00:00+02:00', visibility => 'private' },
+    ],
+  );
+
+  page_lists_ok('month, oldest first', $dir, '2026/07/index.html', [qw( jul1 jul2 jul3 )]);
+  page_lists_ok('next month',          $dir, '2026/08/index.html', [qw( aug1 )]);
+  page_lists_ok('older year',          $dir, '2018/08/index.html', [qw( old1 )]);
+  page_lists_ok('undated',             $dir, 'archive/undated/index.html', [qw( nodt )]);
+  ok(! -e $dir->child('2026/09'), 'no page for a month with no photos');
+
+  page_links_ok('month neighbors', $dir, '2026/07/index.html', '/2026/08/', '/2018/08/', '/2026/');
+  page_links_ok('year neighbors',  $dir, '2018/index.html',    '/2026/');
+  page_links_ok('archive index',   $dir, 'archive/index.html', '/2026/', '/2018/', '/archive/undated/');
+  page_links_ok('photo to month',  $dir, 'p/jul3/index.html',  '/2026/07/');
+
+  never_mentioned_ok('private photo in archive', $dir, 'priv');
+};
+
+subtest 'sampling a long month for previews' => sub {
+  my ($site) = library_with(photos => []);
+  $site = Jiggle::Site->new({ library => $site });
+
+  is_deeply([ $site->sample(3, 1 .. 9) ], [ 1, 4, 7 ], 'evenly spread, in order');
+  is_deeply([ $site->sample(12, 1 .. 5) ], [ 1 .. 5 ], 'short lists come back whole');
+};
+
 done_testing;

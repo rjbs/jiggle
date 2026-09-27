@@ -182,3 +182,8 @@ h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
 
 .tag-cloud { list-style: none; padding: 0; columns: 14em; }
 .tag-cloud li { margin-bottom: 0.25rem; }
+
+.archive-year, .archive-month { margin-bottom: 2rem; }
+.archive-year h2, .archive-month h2 { font-size: 1.2rem; margin: 0 0 0.5rem; }
+h1 .count, h2 .count { font-weight: normal; margin-left: 0.5em; }
+.more { margin: 0.5rem 0 0; }

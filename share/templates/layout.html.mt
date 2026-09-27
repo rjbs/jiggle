@@ -38,6 +38,7 @@
   <nav>
     <a href="/albums/">Albums</a>
     <a href="/tags/">Tags</a>
+    <a href="/archive/">Archive</a>
     <a href="/map/">Map</a>
   </nav>
 </header>

@@ -32,7 +32,15 @@
     </div>
     <dl class="photo-meta">
 % if (defined $photo->taken) {
-      <dt>Taken</dt><dd><%= $site->display_date($photo) %></dd>
+%   my $month = $site->month_of($photo);
+      <dt>Taken</dt>
+      <dd>
+%   if ($month) {
+        <a href="<%= $site->month_url(@$month) %>"><%= $site->display_date($photo) %></a>
+%   } else {
+        <%= $site->display_date($photo) %>
+%   }
+      </dd>
 % }
 % if (@$albums) {
       <dt>Albums</dt>
