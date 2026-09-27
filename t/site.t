@@ -112,27 +112,63 @@ subtest 'albums with only private photos are omitted' => sub {
   never_mentioned_ok('empty album', $dir, 'hidden/');
 };
 
-subtest 'private zones' => sub {
-  my ($library) = library_with(
-    config => qq{[[private_zone]]\nlat = 40.0\nlon = -75.0\nradius = 500\n},
-    photos => [],
-  );
-  my $site = Jiggle::Site->new({ library => $library });
+sub site_with_config ($config) {
+  my ($library) = library_with(config => $config, photos => []);
+  return Jiggle::Site->new({ library => $library });
+}
 
-  my sub at ($lat, $lon) {
-    Jiggle::Photo->new({
-      id => 'x', location => { lat => $lat, lon => $lon },
-      original => { ext => 'jpg', width => 1, height => 1 },
-    });
-  }
+sub at ($lat, $lon) {
+  Jiggle::Photo->new({
+    id => 'x', location => { lat => $lat, lon => $lon },
+    original => { ext => 'jpg', width => 1, height => 1 },
+  });
+}
+
+my $ZONE = qq{[[private_zone]]\nlat = 40.0\nlon = -75.0\nradius = 500\n};
+
+subtest 'private zones' => sub {
+  my $site = site_with_config($ZONE);
 
   location_published_is('inside zone',  $site, at(40.001, -75.001), undef);
   location_published_is('outside zone', $site, at(40.01, -75.0), { lat => 40.01, lon => -75.0 });
 };
 
+subtest 'published locations are rounded' => sub {
+  my $site = site_with_config('');
+
+  location_published_is('to 3 places by default', $site,
+    at(48.2084123, 16.3731456), { lat => 48.208, lon => 16.373 });
+
+  location_published_is('south and west', $site,
+    at(-37.8098306, -144.9615472), { lat => -37.81, lon => -144.962 });
+
+  location_published_is('to a configured precision', site_with_config("location_precision = 2\n"),
+    at(48.2084123, 16.3731456), { lat => 48.21, lon => 16.37 });
+
+  # This photo is 489m from the zone's center, just inside its 500m radius.
+  # Rounded to 2 places, its latitude would be 778m away, outside the zone,
+  # so the zone check must use the true location.
+  location_published_is('rounding never moves a photo out of a zone',
+    site_with_config("location_precision = 2\n[[private_zone]]\nlat = 40.003\nlon = -75.0\nradius = 500\n"),
+    at(40.0074, -75.0), undef);
+};
+
+subtest 'only rounded coordinates reach the published site' => sub {
+  my ($site, $dir) = built_site(
+    photos => [ { id => 'vienna01', location => { lat => 48.2084123, lon => 16.3731456 } } ],
+  );
+
+  for my $page ('map/photos.geojson', 'p/vienna01/index.html') {
+    my $text = $dir->child($page)->slurp_raw;
+    like($text,   qr/48\.208\b/,  "$page has the rounded latitude");
+    unlike($text, qr/48\.2084/,   "$page lacks the precise latitude");
+    unlike($text, qr/16\.3731/,   "$page lacks the precise longitude");
+  }
+};
+
 subtest 'located photos inside a private zone stay off the map' => sub {
   my ($site, $dir) = built_site(
-    config => qq{[[private_zone]]\nlat = 40.0\nlon = -75.0\nradius = 500\n},
+    config => $ZONE,
     photos => [ { id => 'home0001', location => { lat => 40.0001, lon => -75.0001 } } ],
   );
 

@@ -90,13 +90,29 @@ This returns the photo's location as it may be published, or undef.  A photo
 taken inside any private zone in the library's configuration has no public
 location, though its metadata keeps the true one.
 
+Every published location is also rounded, to C<location_precision> decimal
+places (3 by default, which is about 100 meters).  That's plenty for a map
+of where photos were taken, and it means no published photo pins down an
+exact spot.  It also blurs the edge of each private zone, where photos just
+outside would otherwise trace a ring around the hidden center.
+
+This is the only place published coordinates come from, so anything that
+publishes a location must get it here.
+
 =cut
 
 sub public_location ($self, $photo) {
   my $loc = $photo->location;
   return unless $loc;
+
+  # The zone check uses the true location, so rounding can't move a photo
+  # out of a zone.
   return if in_private_zone($loc, $self->config->{private_zone} // []);
-  return $loc;
+
+  my $places = $self->config->{location_precision} // 3;
+  return {
+    map {; $_ => 0 + sprintf('%.*f', $places, $loc->{$_}) } qw( lat lon )
+  };
 }
 
 has albums => (

@@ -221,9 +221,24 @@ radius = 500
 ```
 
 A photo taken inside one publishes no coordinates anywhere: not on its page,
-not in the GeoJSON, not in the search index.  Its TOML keeps the true location.  Before
-leaving Flickr, copy the zones from Flickr's settings, which the export
-probably doesn't include (thread: *Location privacy zones*).
+not in the GeoJSON, not in the search index.  Its TOML keeps the true
+location.  Before leaving Flickr, copy the zones from Flickr's settings,
+which the export probably doesn't include (#6).
+
+Every published coordinate is also **rounded**, to `location_precision`
+decimal places in `jiggle.toml` (3 by default, about 100 meters).  Zones alone
+leave a ring: photos taken just outside a zone still publish exact
+positions, and over the years they'd trace a circle around the hidden
+center.  Rounding blurs that edge, and it means no published photo pins down
+an exact spot.  The zone check uses the true location, so rounding can never
+move a photo out of a zone.  Make zones generously large, too.
+
+Published files never include location either: `site/` holds only HTML,
+static assets, the GeoJSON, and renditions stripped of all metadata.
+Originals are never published.  `Site::public_location` is the only source
+of published coordinates; anything new that publishes a location (search,
+the blog manifest, place names from Flickr) must go through it or the same
+zone check.
 
 ### Search
 
