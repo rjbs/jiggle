@@ -3,7 +3,7 @@ use v5.36;
 
 use Moo;
 
-use CommonMark ();
+use Jiggle::Markdown ();
 use Encode ();
 use JSON::MaybeXS ();
 use List::Util ();
@@ -305,13 +305,9 @@ sub display_title ($self, $photo) {
 
   my $html = $site->description_html($markdown);
 
-Descriptions (of photos and albums) are Markdown, rendered as CommonMark
-with one change from the standard: a newline is a line break, as it was on
-Flickr, rather than being joined into the paragraph.
-
-CommonMark's safe mode is on, as it is by default: raw HTML is omitted, and
-links to C<javascript:> and similar URLs are neutered, so no description can
-put markup of its own into a page.
+This renders a description (of a photo or an album) with
+L<Jiggle::Markdown/markdown_to_html>, as a Mojo::ByteStream so that templates
+don't escape it.
 
 =method description_text
 
@@ -320,37 +316,12 @@ places like C<og:description>.
 
 =cut
 
-sub _parse_markdown ($text) {
-  CommonMark->parse(string => $text);
-}
-
 sub description_html ($self, $text) {
-  return Mojo::ByteStream->new('') unless defined $text and length $text;
-
-  my $html = _parse_markdown($text)->render_html(CommonMark::OPT_HARDBREAKS);
-  return Mojo::ByteStream->new($html);
+  Mojo::ByteStream->new(Jiggle::Markdown::markdown_to_html($text));
 }
 
 sub description_text ($self, $text) {
-  return '' unless defined $text and length $text;
-
-  my $iter = _parse_markdown($text)->iterator;
-  my @parts;
-
-  while (my ($event, $node) = $iter->next) {
-    my $type = $node->get_type;
-
-    if ($event == CommonMark::EVENT_ENTER) {
-      push @parts, $node->get_literal
-        if $type == CommonMark::NODE_TEXT or $type == CommonMark::NODE_CODE;
-      push @parts, ' '
-        if $type == CommonMark::NODE_SOFTBREAK or $type == CommonMark::NODE_LINEBREAK;
-    } elsif ($type == CommonMark::NODE_PARAGRAPH or $type == CommonMark::NODE_HEADING) {
-      push @parts, ' ';
-    }
-  }
-
-  return join q{}, @parts;
+  Jiggle::Markdown::markdown_to_text($text);
 }
 
 sub excerpt ($self, $text, $max = 200) {
