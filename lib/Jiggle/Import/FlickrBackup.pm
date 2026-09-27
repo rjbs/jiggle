@@ -6,6 +6,7 @@ use Moo;
 use Jiggle::Album;
 use Jiggle::Ingest;
 use Jiggle::Markdown qw( html_to_markdown );
+use Jiggle::Progress;
 use Path::Tiny ();
 use XML::LibXML;
 use XML::LibXML::XPathContext;
@@ -100,7 +101,14 @@ sub run ($self) {
   $summary{$_} = 0 for qw( imported existing );
   $summary{skipped} = [];
 
+  my $progress = Jiggle::Progress->new({
+    label  => 'import',
+    total  => scalar keys %$sidecars,
+    logger => $self->logger,
+  });
+
   for my $flickr_id (sort keys %$sidecars) {
+    $progress->tick;
     my $sidecar = $sidecars->{$flickr_id};
     my $meta    = $self->_read_sidecar($sidecar->{file});
 
@@ -132,6 +140,8 @@ sub run ($self) {
     }
   }
 
+  $progress->done;
+
   $summary{albums} = $self->_write_albums(\%set, \%id_for_flickr);
   return \%summary;
 }
@@ -140,9 +150,12 @@ sub run ($self) {
 sub _newest_sidecars ($self) {
   my %newest;
 
+  my $progress = Jiggle::Progress->new({ label => 'scanning sidecars', logger => $self->logger });
+
   my $iter = $self->root->iterator({ recurse => 1 });
   while (my $file = $iter->()) {
     next unless $file->basename =~ /\A\d{8}-.*\.xml\z/;
+    $progress->tick;
 
     my $doc = eval { XML::LibXML->load_xml(location => "$file") };
     unless ($doc) {
@@ -171,6 +184,7 @@ sub _newest_sidecars ($self) {
       if ! $have or $written > $have->{written};
   }
 
+  $progress->done;
   return \%newest;
 }
 

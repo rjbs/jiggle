@@ -166,7 +166,19 @@ sub _install_original ($self, $source, $photo) {
   # Copy to a temporary name and rename, so an interrupted ingest never
   # leaves a truncated file at a path that looks finished.
   my $tmp = $dest->sibling('.' . $dest->basename . '.tmp');
-  File::Copy::copy("$source", "$tmp") or die "can't copy $source to $tmp: $!";
+
+  # On macOS, cp -c clones the file when source and destination are on the
+  # same APFS volume: instant, and taking no extra space until one of them
+  # changes.  That turns importing a backup that's on the library's volume
+  # from copying tens of gigabytes into nearly nothing.  Across volumes it
+  # copies.  -- claude, 2026-09-27
+  if ($^O eq 'darwin') {
+    system('cp', '-c', "$source", "$tmp") == 0
+      or die "can't copy $source to $tmp\n";
+  } else {
+    File::Copy::copy("$source", "$tmp") or die "can't copy $source to $tmp: $!";
+  }
+
   chmod 0444, "$tmp";
   rename "$tmp", "$dest" or die "can't rename $tmp to $dest: $!";
 
