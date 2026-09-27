@@ -55,6 +55,7 @@ round_trips_ok('everything',
   tags        => [ 'vienna', 'church' ],
   visibility  => 'private',
   flickr_id   => '53012345678',
+  flickr_uploaded => '2008-01-06T21:32:33-05:00',
   location    => { lat => 48.2084, lon => 16.3731 },
 );
 
