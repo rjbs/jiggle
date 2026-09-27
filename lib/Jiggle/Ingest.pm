@@ -47,8 +47,11 @@ my %MEDIA_FOR_TYPE = (
   PNG  => [ photo => 'png'  ],
   HEIC => [ photo => 'heic' ],
   WEBP => [ photo => 'webp' ],
+  GIF  => [ photo => 'gif'  ],   # an animated one becomes its first frame
   MOV  => [ video => 'mov'  ],
   MP4  => [ video => 'mp4'  ],
+  M4V  => [ video => 'm4v'  ],
+  AVI  => [ video => 'avi'  ],   # old cameras' clips; ffmpeg reads them fine
 );
 
 =method ingest_files
@@ -236,6 +239,11 @@ sub _video_facts ($tag, $facts) {
   } elsif (my $utc = $tag->('CreateDate')) {
     if (my ($y, $m, $d, $time) = $utc =~ /\A(\d{4}):(\d\d):(\d\d) (\d\d:\d\d:\d\d)/) {
       $facts->{taken} = "$y-$m-${d}T${time}Z" unless $y eq '0000';
+    }
+  } elsif (my $local = $tag->('DateTimeOriginal')) {
+    # Old cameras' AVI files carry an EXIF-style local time instead.
+    if (my ($y, $m, $d, $time) = $local =~ /\A(\d{4}):(\d\d):(\d\d) (\d\d:\d\d:\d\d)/) {
+      $facts->{taken} = "$y-$m-${d}T$time";
     }
   }
 
