@@ -197,4 +197,36 @@ subtest 'sampling a long month for previews' => sub {
   is_deeply([ $site->sample(12, 1 .. 5) ], [ 1 .. 5 ], 'short lists come back whole');
 };
 
+my $RENDER = Jiggle::Site->new({ library => (library_with(photos => []))[0] });
+
+sub description_renders_ok ($desc, $markdown, %want) {
+  my $html = $RENDER->description_html($markdown) . '';
+  like($html, $_, "$desc: html matches $_")     for ($want{like}   // [])->@*;
+  unlike($html, $_, "$desc: html lacks $_")     for ($want{unlike} // [])->@*;
+}
+
+sub description_text_is ($desc, $markdown, $want) {
+  is($RENDER->excerpt($RENDER->description_text($markdown)), $want, "text: $desc");
+}
+
+subtest 'descriptions are Markdown' => sub {
+  description_renders_ok('a newline is a line break', "one\ntwo",
+    like => [ qr{one<br />\ntwo} ]);
+
+  description_renders_ok('blank lines make paragraphs', "one\n\ntwo",
+    like => [ qr{<p>one</p>\n<p>two</p>} ]);
+
+  description_renders_ok('links and emphasis', 'see [the dom](https://example.com/) **now**',
+    like => [ qr{<a href="https://example.com/">the dom</a>}, qr{<strong>now</strong>} ]);
+
+  description_renders_ok('raw HTML is omitted', 'a <script>alert(1)</script> b <b>c</b>',
+    unlike => [ qr{<script}, qr{<b>} ]);
+
+  description_renders_ok('javascript links are neutered', '[click](javascript:alert(1))',
+    unlike => [ qr{javascript:} ]);
+
+  description_text_is('syntax removed', "**Bold** and [a link](https://example.com/).\n\nMore.",
+    'Bold and a link. More.');
+};
+
 done_testing;

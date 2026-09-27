@@ -79,6 +79,12 @@ here is safe, and it means page generation never has to open an image.
 An absent `visibility` means public.  A string rather than a boolean leaves
 room for other levels later, if ever needed.
 
+Descriptions (of photos and albums) are **Markdown**, rendered as CommonMark
+with one change: a newline is a line break, as on Flickr, rather than being
+joined into the paragraph.  CommonMark's safe mode omits raw HTML and
+neuters `javascript:` links.  Flickr's HTML descriptions are converted to
+Markdown at import (#2).
+
 ### Albums
 
 Albums have order, a cover, and their own title and description, so each gets
