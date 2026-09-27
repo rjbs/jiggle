@@ -39,13 +39,15 @@ has library => (is => 'ro', required => 1);
 # Called with a message for each file skipped or ingested.
 has logger => (is => 'ro', default => sub { sub { } });
 
-# These are the types we can make renditions of today.  Video comes later.
-# -- claude, 2026-09-26
-my %EXT_FOR_TYPE = (
-  JPEG => 'jpg',
-  PNG  => 'png',
-  HEIC => 'heic',
-  WEBP => 'webp',
+# The file types we know how to make renditions of, keyed by ExifTool's
+# FileType, giving the kind of media and the extension used in the library.
+my %MEDIA_FOR_TYPE = (
+  JPEG => [ photo => 'jpg'  ],
+  PNG  => [ photo => 'png'  ],
+  HEIC => [ photo => 'heic' ],
+  WEBP => [ photo => 'webp' ],
+  MOV  => [ video => 'mov'  ],
+  MP4  => [ video => 'mp4'  ],
 );
 
 =method ingest_files
@@ -77,14 +79,25 @@ sub ingest_files ($self, @paths) {
 
     my $facts = $self->_facts_for($path);
 
-    my $ext = $EXT_FOR_TYPE{ $facts->{type} // '' };
-    unless ($ext) {
+    my $media = $MEDIA_FOR_TYPE{ $facts->{type} // '' };
+    unless ($media) {
       $self->logger->("skip $path: unsupported type " . ($facts->{type} // 'unknown'));
+      next;
+    }
+
+    my ($kind, $ext) = @$media;
+
+    # A Live Photo is a still plus a short clip, sharing a content identifier.
+    # Until there's a policy for them, the clip is skipped rather than being
+    # ingested as a video of its own.
+    if ($facts->{live_photo}) {
+      $self->logger->("skip $path: Live Photo motion, not yet supported");
       next;
     }
 
     my $photo = Jiggle::Photo->new({
       id    => $id,
+      type  => $kind,
       taken => $facts->{taken},
       ($facts->{location} ? (location => $facts->{location}) : ()),
       original => {
@@ -94,6 +107,7 @@ sub ingest_files ($self, @paths) {
         bytes  => -s $path,
         width  => $facts->{width},
         height => $facts->{height},
+        (defined $facts->{duration} ? (duration => 0 + $facts->{duration}) : ()),
       },
     });
 
@@ -130,6 +144,9 @@ sub _facts_for ($self, $path) {
 
   my %facts = (type => $tag->('FileType'));
 
+  my $media = $MEDIA_FOR_TYPE{ $facts{type} // '' };
+  return _video_facts($tag, \%facts) if $media and $media->[0] eq 'video';
+
   my ($w, $h) = ($tag->('ImageWidth'), $tag->('ImageHeight'));
   ($w, $h) = ($h, $w) if ($tag->('Orientation') // 1) >= 5;
   @facts{qw( width height )} = ($w, $h);
@@ -154,6 +171,39 @@ sub _facts_for ($self, $path) {
   }
 
   return \%facts;
+}
+
+sub _video_facts ($tag, $facts) {
+  $facts->{duration} = $tag->('Duration');
+
+  # The stored frame size is before rotation; a portrait clip from a phone is
+  # stored as landscape with a 90-degree rotation.
+  my ($w, $h) = ($tag->('ImageWidth'), $tag->('ImageHeight'));
+  ($w, $h) = ($h, $w) if ($tag->('Rotation') // 0) % 180;
+  @$facts{qw( width height )} = ($w, $h);
+
+  # QuickTime's CreationDate is local time with an offset.  CreateDate is in
+  # UTC with no marker, so if it's all we have, we say so with a Z.
+  if (my $dt = $tag->('CreationDate')) {
+    if (my ($y, $m, $d, $time, $offset) = $dt =~ /\A(\d{4}):(\d\d):(\d\d) (\d\d:\d\d:\d\d)(?:\.\d+)?([-+]\d\d:\d\d)?/) {
+      $facts->{taken} = "$y-$m-${d}T$time" . ($offset // '');
+    }
+  } elsif (my $utc = $tag->('CreateDate')) {
+    if (my ($y, $m, $d, $time) = $utc =~ /\A(\d{4}):(\d\d):(\d\d) (\d\d:\d\d:\d\d)/) {
+      $facts->{taken} = "$y-$m-${d}T${time}Z" unless $y eq '0000';
+    }
+  }
+
+  # With PrintConv off, GPSCoordinates is signed decimal "lat lon [alt]".
+  if (my $coords = $tag->('GPSCoordinates')) {
+    my ($lat, $lon) = split / /, $coords;
+    $facts->{location} = { lat => 0 + $lat, lon => 0 + $lon }
+      if defined $lon;
+  }
+
+  $facts->{live_photo} = 1 if defined $tag->('ContentIdentifier');
+
+  return $facts;
 }
 
 1;

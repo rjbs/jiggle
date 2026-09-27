@@ -22,7 +22,13 @@ opening an image.
 =cut
 
 has id    => (is => 'ro', required => 1);
-has type  => (is => 'ro', default  => 'photo');
+has type  => (
+  is  => 'ro',
+  default => 'photo',
+  isa => sub ($t) {
+    Carp::croak("unknown type $t") unless $t eq 'photo' or $t eq 'video';
+  },
+);
 
 has title       => (is => 'ro', default => '');
 has description => (is => 'ro', default => '');
@@ -43,7 +49,8 @@ has visibility => (
 
 has flickr_id => (is => 'ro');
 
-# { file, ext, sha256, bytes, width, height }
+# { file, ext, sha256, bytes, width, height }, plus duration (in seconds) for
+# a video
 has original => (is => 'ro', required => 1);
 
 # { lat, lon } or undef
@@ -55,6 +62,9 @@ sub ext    ($self) { $self->original->{ext}    }
 sub sha256 ($self) { $self->original->{sha256} }
 sub width  ($self) { $self->original->{width}  }
 sub height ($self) { $self->original->{height} }
+sub duration ($self) { $self->original->{duration} }
+
+sub is_video ($self) { $self->type eq 'video' }
 
 sub from_toml_file ($class, $file) {
   my $data = load_toml_file($file);
@@ -113,6 +123,8 @@ sub as_toml ($self) {
   for my $key (qw( bytes width height )) {
     push @lines, sprintf '%s = %d', $key, $self->original->{$key};
   }
+  push @lines, sprintf 'duration = %.3f', $self->duration
+    if defined $self->duration;
 
   if (my $loc = $self->location) {
     push @lines, q{}, '[location]';
