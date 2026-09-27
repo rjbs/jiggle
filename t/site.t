@@ -2,65 +2,11 @@ use v5.36;
 
 use Test::More;
 
-use lib 'lib';
+use lib 'lib', 't/lib';
 
-use Jiggle::Derive;
-use Jiggle::Library;
 use Jiggle::Photo;
 use Jiggle::Site;
-use Path::Tiny ();
-
-# Build a library in a temporary directory.  The site builder only hardlinks
-# renditions, never reads them, so placeholder files stand in for real images
-# and these tests don't need libvips.
-# Path::Tiny removes a tempdir when its object is destroyed, so every one is
-# kept here until the test ends.  Otherwise a directory could vanish before
-# its assertions run, and "never mentioned" checks would pass vacuously.
-my @KEEP_TEMPDIRS;
-
-sub library_with (%arg) {
-  my $root = Path::Tiny->tempdir;
-  push @KEEP_TEMPDIRS, $root;
-
-  $root->child('jiggle.toml')->spew_utf8($arg{config} // '');
-
-  my $library = Jiggle::Library->new({ root => $root });
-
-  for my $spec ($arg{photos}->@*) {
-    my $photo = Jiggle::Photo->new({
-      original => {
-        file => "$spec->{id}.jpg", ext => 'jpg', sha256 => 'f' x 64,
-        bytes => 1, width => 4000, height => 3000,
-      },
-      %$spec,
-    });
-
-    $library->add_photo($photo);
-
-    for my $recipe (Jiggle::Derive->recipes) {
-      my $file = $library->derived_path($photo->id, $recipe->{name});
-      $file->parent->mkpath;
-      $file->spew_raw("placeholder");
-    }
-  }
-
-  for my $album (($arg{albums} // [])->@*) {
-    $library->albums_dir->mkpath;
-    $library->albums_dir->child("$album->{slug}.toml")->spew_utf8(
-      sprintf qq{title = "%s"\nphotos = [%s]\n},
-        $album->{title}, join q{, }, map {; qq{"$_"} } $album->{photos}->@*
-    );
-  }
-
-  return ($library, $root);
-}
-
-sub built_site (%arg) {
-  my ($library, $root) = library_with(%arg);
-  my $site = Jiggle::Site->new({ library => $library });
-  $site->build;
-  return ($site, $root->child('site'), $library);
-}
+use Jiggle::TestLibrary;
 
 sub site_files ($dir) {
   my @files;
