@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><%= $page_title %></title>
 <link rel="stylesheet" href="/static/jiggle.css">
+<script src="/static/jiggle-keys.js" defer></script>
 % if ($og) {
 <meta property="og:type" content="<%= $og->{video} ? 'video.other' : 'website' %>">
 <meta property="og:site_name" content="<%= $site->site_title %>">
