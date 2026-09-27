@@ -6,7 +6,9 @@ use Moo;
 use Jiggle::Markdown ();
 use Encode ();
 use JSON::MaybeXS ();
+use Jiggle::Progress;
 use List::Util ();
+use Time::HiRes ();
 use Jiggle::Derive;
 use Jiggle::Geo qw( in_private_zone );
 use Jiggle::Site::Writer;
@@ -416,14 +418,67 @@ The renditions must already exist; see L<Jiggle::Derive>.
 
 sub build ($self) {
   my $w = $self->writer;
-  my @photos = $self->photos->@*;
+  my @photos = $self->_phase('reading metadata', sub { $self->photos->@* });
 
   $self->_write_page('index.html', 'index', {
     title  => $self->site_title,
     photos => [ List::Util::head(100, @photos) ],
   });
 
+  $self->_phase('photo pages',     sub { $self->_build_photo_pages(\@photos) });
+  $self->_phase('albums and tags', sub { $self->_build_collections });
+  $self->_phase('archive',         sub { $self->_build_archive });
+
+  $self->_phase('map, search page, and static files', sub {
+    $self->_write_page('map/index.html', 'map', { title => 'Map' });
+    $w->write_file('map/photos.geojson', $JSON->encode($self->_geojson));
+    $self->_write_page('search/index.html', 'search', { title => 'Search' });
+    $self->_copy_static;
+  });
+
+  if (my $search = $self->search) {
+    # Pagefind indexes whatever HTML is in the output, so stale pages (like
+    # one for a photo just made private) must be pruned before it runs.  The
+    # old index is kept until the new one is written, so unchanged index
+    # files are left alone.  -- claude, 2026-09-27
+    $self->_phase('search index', sub {
+      $w->prune({ except => 'pagefind/' });
+      $search->index_site($self->out_dir, $w);
+    });
+  }
+
+  $self->_phase('pruning', sub { $w->prune });
+
+  my $s = $w->stats;
+  $self->logger->(sprintf
+    '%d public photo(s); %d file(s) written, %d unchanged, %d linked, %d pruned',
+    0 + @photos, @$s{qw( written unchanged linked pruned )},
+  );
+
+  return;
+}
+
+# Run one phase of the build, and report how long it took.
+sub _phase ($self, $name, $code) {
+  my $start  = Time::HiRes::time();
+  my @result = $code->();
+  $self->logger->(sprintf 'site: %s in %.1fs', $name, Time::HiRes::time() - $start);
+  return @result;
+}
+
+sub _build_photo_pages ($self, $photos) {
+  my $w = $self->writer;
+  my @photos = @$photos;
+
+  my $progress = Jiggle::Progress->new({
+    label  => 'photo pages',
+    total  => scalar @photos,
+    logger => $self->logger,
+  });
+
   for my $i (keys @photos) {
+    $progress->tick;
+
     my $photo = $photos[$i];
     my $id    = $photo->id;
 
@@ -443,6 +498,10 @@ sub build ($self) {
     }
   }
 
+  return;
+}
+
+sub _build_collections ($self) {
   $self->_write_page('albums/index.html', 'albums', {
     title  => 'Albums',
     albums => $self->albums,
@@ -466,32 +525,6 @@ sub build ($self) {
       tag   => $tag,
     });
   }
-
-  $self->_build_archive;
-
-  $self->_write_page('map/index.html', 'map', { title => 'Map' });
-  $w->write_file('map/photos.geojson', $JSON->encode($self->_geojson));
-
-  $self->_write_page('search/index.html', 'search', { title => 'Search' });
-
-  $self->_copy_static;
-
-  if (my $search = $self->search) {
-    # Pagefind indexes whatever HTML is in the output, so stale pages (like
-    # one for a photo just made private) must be pruned before it runs.  The
-    # old index is kept until the new one is written, so unchanged index
-    # files are left alone.  -- claude, 2026-09-27
-    $w->prune({ except => 'pagefind/' });
-    $search->index_site($self->out_dir, $w);
-  }
-
-  $w->prune;
-
-  my $s = $w->stats;
-  $self->logger->(sprintf
-    '%d public photo(s); %d file(s) written, %d unchanged, %d linked, %d pruned',
-    0 + @photos, @$s{qw( written unchanged linked pruned )},
-  );
 
   return;
 }
