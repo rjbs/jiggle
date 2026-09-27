@@ -5,7 +5,8 @@
 %   my ($vw, $vh) = $site->rendition_size($photo, 'video.mp4');
     <video controls playsinline preload="metadata"
            poster="<%= $site->rendition_url($photo, '2048.webp') %>"
-           width="<%= $vw %>" height="<%= $vh %>">
+           width="<%= $vw %>" height="<%= $vh %>"
+           style="--ar: <%= sprintf '%.4f', $vw / $vh %>">
       <source src="<%= $site->rendition_url($photo, 'video.mp4') %>" type="video/mp4">
     </video>
 % } else {
