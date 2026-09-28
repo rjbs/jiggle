@@ -182,6 +182,30 @@ subtest 'rebuilding changes nothing, and pruning removes the stale' => sub {
   ok(! -e $dir->child('p/zzzz0001'), 'with verify, a stray file is pruned');
 };
 
+subtest 'a library can be moved' => sub {
+  my ($site, $dir, $library) = built_site(photos => [ { id => 'eeee0001' }, { id => 'eeee0002' } ]);
+
+  my $old_root = $library->root;
+  my $new_root = $old_root->sibling($old_root->basename . '-moved');
+  rename "$old_root", "$new_root" or die "can't move $old_root: $!";
+
+  my $moved = Jiggle::Site->new({ library => Jiggle::Library->new({ root => $new_root }) });
+  $moved->build;
+
+  my $stats = $moved->writer->stats;
+  ok($moved->writer->trusting_manifest, 'the manifest is still trusted');
+  is($stats->{written}, 0, 'nothing written');
+  is($stats->{linked},  0, 'nothing relinked');
+  is($stats->{pruned},  0, 'nothing pruned');
+
+  my @mentions = grep {; $_->slurp_raw =~ /\Q$old_root/ }
+                 grep {; $_->is_file }
+                 $new_root->child('.jiggle')->children, $new_root->child('derived', 'manifest.json');
+  is_deeply([ map {; $_->basename } @mentions ], [], 'no bookkeeping names the old location');
+
+  rename "$new_root", "$old_root";   # put it back, for the tempdir cleanup
+};
+
 subtest 'after an interrupted build, the manifest is not trusted' => sub {
   my ($site, $dir, $library) = built_site(photos => [ { id => 'cccc0001' } ]);
 

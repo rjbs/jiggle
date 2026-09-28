@@ -160,11 +160,14 @@ filesystem), the file is copied instead.
 =cut
 
 sub link_file ($self, $rel, $source, $key = '') {
-  my $dest = $self->_claim($rel, { link => "$source", key => $key });
+  # The source is recorded relative to the output directory, so that the
+  # whole library can move without every link looking changed.
+  my $from = Path::Tiny::path($source)->absolute->relative($self->root)->stringify;
+  my $dest = $self->_claim($rel, { link => $from, key => $key });
 
   if (my $old = $self->_old) {
     my $had = $old->{$rel};
-    if ($had and ($had->{link} // '') eq "$source" and ($had->{key} // '') eq $key) {
+    if ($had and ($had->{link} // '') eq $from and ($had->{key} // '') eq $key) {
       $self->stats->{unchanged}++;
       return;
     }
