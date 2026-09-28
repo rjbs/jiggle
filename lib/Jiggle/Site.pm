@@ -72,7 +72,9 @@ has verify => (is => 'ro', default => 0);
 has config => (is => 'lazy', default => sub ($self) { $self->library->config });
 
 sub site_title ($self) { $self->config->{title}    // 'Photos' }
-sub base_url   ($self) { $self->config->{base_url} // ''       }
+# Paths are appended to it, and all start with a slash, so a trailing slash
+# here (a natural way to write a URL) is dropped.
+sub base_url   ($self) { ($self->config->{base_url} // '') =~ s{/+\z}{}r }
 
 #---------------------------------------------------------------------------
 # The model: everything the templates need, with private photos removed.

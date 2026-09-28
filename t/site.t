@@ -182,6 +182,17 @@ subtest 'rebuilding changes nothing, and pruning removes the stale' => sub {
   ok(! -e $dir->child('p/zzzz0001'), 'with verify, a stray file is pruned');
 };
 
+subtest 'a base URL with a trailing slash' => sub {
+  my ($site, $dir) = built_site(
+    config => qq{base_url = "https://photos.example.com/"\n},
+    photos => [ { id => 'gggg0001' } ],
+  );
+
+  like($dir->child('p/gggg0001/index.html')->slurp_utf8,
+    qr{<meta property="og:url" content="https://photos\.example\.com/p/gggg0001/">},
+    'no doubled slash');
+};
+
 subtest 'albums are listed newest first' => sub {
   my ($site, $dir) = built_site(
     photos => [ { id => 'ffff0001' } ],
