@@ -96,6 +96,11 @@ order.  The metadata tree is read once and cached.
 
 my $CACHE_JSON = JSON::MaybeXS->new->canonical->utf8;
 
+# How many metadata files the last load had to parse, for testing the cache.
+has _reparsed => (is => 'rw', init_arg => undef);
+
+sub reparsed ($self) { $self->_photo_index; $self->_reparsed }
+
 has _photo_index => (
   is => 'lazy',
   init_arg  => undef,
@@ -128,11 +133,15 @@ has _photo_index => (
         my (undef, undef, undef, undef, undef, undef, undef, $size, undef, $mtime)
           = Time::HiRes::stat("$file");
 
+        # As a string with fixed precision: a float's round trip through
+        # JSON loses digits, and then no cached time would ever match.
+        $mtime = sprintf '%.6f', $mtime;
+
         my $rel = $file->relative($self->meta_dir)->stringify;
         my $had = $old->{$rel};
 
         my $data;
-        if ($had and $had->{size} == $size and $had->{mtime} == $mtime) {
+        if ($had and $had->{size} == $size and $had->{mtime} eq $mtime) {
           $data = $had->{data};
         } else {
           $data = load_toml_file($file);
@@ -150,6 +159,7 @@ has _photo_index => (
     $progress->done;
     $self->logger->(sprintf 'metadata: %d photo(s), %d file(s) reparsed',
       scalar keys %photo, $misses // 0);
+    $self->_reparsed($misses // 0);
 
     if ($misses or keys %$old != keys %new) {
       $cache_file->parent->mkpath;
