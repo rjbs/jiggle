@@ -117,6 +117,142 @@ sub rendition_size ($class, $photo, $name) {
   return map {; 2 * int($_ * $scale / 2 + 0.5) } ($w, $h);
 }
 
+=head2 The manifest
+
+What's been made is recorded in one file, F<derived/manifest.json>: for each
+photo and rendition, the digest of the original and the recipe version that
+produced it.  Checking what's stale is then a lookup, rather than a read and
+several stats for every photo, which on slow storage was the difference
+between an hour and a moment.
+
+The manifest is trusted: a rendition deleted by hand isn't noticed.  With
+C<verify>, every rendition's file is checked too, and stray files (like
+leftovers from an interrupted run) are removed.
+
+Libraries from before the manifest have a F<state.json> per photo.  Each is
+read into the manifest the first time its photo is looked at, and deleted
+once the manifest is saved.
+
+=cut
+
+has verify => (is => 'ro', default => 0);
+
+my $JSON = JSON::MaybeXS->new->canonical->utf8;
+
+sub _manifest_file ($self) { $self->library->derived_dir->child('manifest.json') }
+
+has _manifest => (
+  is => 'lazy',
+  init_arg => undef,
+  default  => sub ($self) {
+    my $file = $self->_manifest_file;
+    return {} unless -e $file;
+
+    my $data = eval { $JSON->decode($file->slurp_raw) };
+    unless ($data and ref $data->{photos} eq 'HASH') {
+      $self->logger->("warning: can't read $file; checking every rendition instead");
+      return {};
+    }
+
+    return $data->{photos};
+  },
+);
+
+has _manifest_dirty => (is => 'rw', init_arg => undef, default => 0);
+has _migrated       => (is => 'ro', init_arg => undef, default => sub { [] });
+
+# A photo's entry: { rendition-name => { sha256, version } }.
+sub _entry ($self, $photo) {
+  my $id = $photo->id;
+  return $self->_manifest->{$id} if $self->_manifest->{$id};
+
+  # Not in the manifest: maybe a library from before there was one.
+  my $old = $self->library->derived_path($id, 'state.json');
+  if (-e $old) {
+    my $state = eval { $JSON->decode($old->slurp_raw) } // {};
+    $self->_manifest->{$id} = $state;
+    $self->_manifest_dirty(1);
+    push $self->_migrated->@*, $old;
+    return $state;
+  }
+
+  return {};
+}
+
+sub _set_entry ($self, $id, $entry) {
+  $self->_manifest->{$id} = $entry;
+  $self->_manifest_dirty(1);
+}
+
+=method save_manifest
+
+This writes the manifest, if it's changed, replacing the file atomically so
+an interrupted write can't leave half a manifest.  Then it deletes any
+per-photo F<state.json> files whose contents are now in it.
+
+=cut
+
+sub save_manifest ($self) {
+  return unless $self->_manifest_dirty;
+
+  my $file = $self->_manifest_file;
+  $file->parent->mkpath;
+  $file->spew_raw($JSON->encode({ version => 1, photos => $self->_manifest }));
+  $self->_manifest_dirty(0);
+
+  $_->remove for $self->_migrated->@*;
+  $self->_migrated->@* = ();
+
+  return;
+}
+
+=method is_complete
+
+  if ($derive->is_complete($photo)) { ... }
+
+This is true if every published rendition of the photo is current, according
+to the manifest.
+
+=method rendition_key
+
+  my $key = $derive->rendition_key($photo, $name);
+
+This returns a string that changes whenever the rendition is remade, for
+telling whether a copy or link of it is out of date.
+
+=cut
+
+sub is_complete ($self, $photo) {
+  my $entry = $self->_entry($photo);
+  for my $recipe ($self->published_recipes_for($photo)) {
+    my $have = $entry->{ $recipe->{name} } or return 0;
+    return 0 unless $have->{sha256}  eq $photo->sha256
+                and $have->{version} eq $self->_version_of($photo, $recipe);
+  }
+  return 1;
+}
+
+sub rendition_key ($self, $photo, $name) {
+  my $have = $self->_entry($photo)->{$name} or return;
+  return "$have->{sha256}:$have->{version}";
+}
+
+=method mark_current
+
+  $derive->mark_current($photo);
+
+This records every rendition of the photo as made and current, without
+making anything.  It's for tests, which use placeholder files.
+
+=cut
+
+sub mark_current ($self, $photo) {
+  $self->_set_entry($photo->id, {
+    map {; $_->{name} => { sha256 => $photo->sha256, version => $self->_version_of($photo, $_) } }
+    $self->recipes_for($photo)
+  });
+}
+
 =method derive_photos
 
   $derive->derive_photos(@photos);
@@ -126,13 +262,15 @@ several photos at once.  It returns the number of renditions made.
 
 =cut
 
-my $JSON = JSON::MaybeXS->new->canonical->pretty;
-
 sub derive_photos ($self, @photos) {
   $self->remove_obsolete(@photos);
 
   my @work = grep {; $self->_stale_recipes($_) } @photos;
-  return 0 unless @work;
+  unless (@work) {
+    $self->logger->(sprintf 'renditions: all %d photo(s) up to date', 0 + @photos);
+    $self->save_manifest;
+    return 0;
+  }
 
   $self->logger->(sprintf "deriving renditions for %d photo(s)", 0 + @work);
 
@@ -144,6 +282,7 @@ sub derive_photos ($self, @photos) {
 
   my $made = 0;
   my @failed;
+  my $saved = time;
 
   my $pm = Parallel::ForkManager->new($self->jobs);
   $pm->run_on_finish(sub ($pid, $exit, $id, $signal, $core, $data) {
@@ -153,12 +292,21 @@ sub derive_photos ($self, @photos) {
       $made += $data->{made};
     }
 
+    # Even a failed photo may have made some renditions before failing.
+    $self->_set_entry($id, $data->{entry}) if $data and $data->{entry};
+
     if ($data and $data->{warnings} and $data->{warnings}->@*) {
       $self->logger->("warning: $id: $_") for $data->{warnings}->@*;
       $self->_warned->{$id} = $data->{warnings};
     }
 
     $progress->tick;
+
+    # Save now and then, so an interrupted run loses little.
+    if (time - $saved >= 60) {
+      $self->save_manifest;
+      $saved = time;
+    }
   });
 
   for my $photo (@work) {
@@ -171,19 +319,23 @@ sub derive_photos ($self, @photos) {
     my $errors = Path::Tiny->tempfile;
     open STDERR, '>', "$errors" or die "can't redirect stderr: $!";
 
-    my $n = eval { $self->_derive_one($photo) };
+    # The entry is updated as each rendition is made, and sent back to the
+    # parent, which owns the manifest.
+    my $entry = { $self->_entry($photo)->%* };
+    my $n = eval { $self->_derive_one($photo, $entry) };
     my $error = $@;
     my @warnings = _warnings_from($errors);
 
     unless (defined $n) {
-      $pm->finish(1, { warnings => [ @warnings, "error: $error" ] });
+      $pm->finish(1, { entry => $entry, warnings => [ @warnings, "error: $error" ] });
     }
 
-    $pm->finish(0, { made => $n, warnings => \@warnings });
+    $pm->finish(0, { made => $n, entry => $entry, warnings => \@warnings });
   }
 
   $pm->wait_all_children;
   $progress->done;
+  $self->save_manifest;
 
   my $warned = keys $self->_warned->%*;
   $self->logger->("$warned photo(s) had warnings; see above") if $warned;
@@ -235,9 +387,11 @@ sub _warnings_from ($file) {
 
   $derive->remove_obsolete(@photos);
 
-This deletes files in each photo's derived directory that no current recipe
-produces: renditions whose recipe was removed or renamed, and temporary files
-left by an interrupted run.  It returns the number of files removed.
+This deletes renditions that no current recipe produces: those whose recipe
+was removed or renamed.  They're found from the manifest.  With C<verify>,
+each photo's derived directory is also listed, and anything else in it (like
+a temporary file left by an interrupted run) is removed too.  It returns the
+number of files removed.
 
 =cut
 
@@ -245,35 +399,31 @@ sub remove_obsolete ($self, @photos) {
   my $removed = 0;
 
   for my $photo (@photos) {
+    my %keep  = map {; $_->{name} => 1 } $self->recipes_for($photo);
+    my $entry = $self->_entry($photo);
+
+    my @gone = grep {; ! $keep{$_} } keys %$entry;
+    if (@gone) {
+      for my $name (@gone) {
+        my $file = $self->library->derived_path($photo->id, $name);
+        $removed++ if -e $file and $file->remove;
+      }
+      $self->_set_entry($photo->id, { map {; $_ => $entry->{$_} } grep {; $keep{$_} } keys %$entry });
+    }
+
+    next unless $self->verify;
+
     my $dir = $self->library->derived_path($photo->id);
     next unless -d $dir;
 
-    my %keep = map {; $_->{name} => 1 } $self->recipes_for($photo);
-    $keep{'state.json'} = 1;
-
-    my @obsolete = grep {; ! $keep{ $_->basename } } $dir->children;
-    next unless @obsolete;
-
-    $_->remove for @obsolete;
-    $removed += @obsolete;
-
-    my $state = $self->_state($photo);
-    delete @$state{ grep {; ! $keep{$_} } keys %$state };
-    $self->_state_file($photo)->spew_raw($JSON->encode($state));
+    for my $stray (grep {; ! $keep{ $_->basename } } $dir->children) {
+      $stray->remove;
+      $removed++;
+    }
   }
 
   $self->logger->("removed $removed obsolete rendition file(s)") if $removed;
   return $removed;
-}
-
-sub _state_file ($self, $photo) {
-  $self->library->derived_path($photo->id, 'state.json');
-}
-
-sub _state ($self, $photo) {
-  my $file = $self->_state_file($photo);
-  return {} unless -e $file;
-  return $JSON->decode($file->slurp_raw);
 }
 
 # A video's images are made from its poster, so they're stale when the poster
@@ -292,31 +442,29 @@ sub _version_of ($self, $photo, $recipe) {
   return $version;
 }
 
-sub _stale_recipes ($self, $photo) {
-  my $state = $self->_state($photo);
-  my $dir   = $self->library->derived_path($photo->id);
+sub _stale_recipes ($self, $photo, $entry = $self->_entry($photo)) {
+  my $dir = $self->library->derived_path($photo->id);
 
   return grep {;
-    my $have = $state->{ $_->{name} };
+    my $have = $entry->{ $_->{name} };
        ! $have
     || $have->{sha256}  ne $photo->sha256
     || $have->{version} ne $self->_version_of($photo, $_)
-    || ! -e $dir->child($_->{name})
+    || ($self->verify and ! -e $dir->child($_->{name}))
   } $self->recipes_for($photo);
 }
 
-sub _derive_one ($self, $photo) {
+sub _derive_one ($self, $photo, $entry) {
   my $original = $self->library->original_path($photo);
   my $dir      = $self->library->derived_path($photo->id);
   $dir->mkpath;
 
-  my $state = $self->_state($photo);
-  my $made  = 0;
+  my $made = 0;
 
   my $image_source = $photo->type eq 'video' ? $dir->child($POSTER->{name})
                    :                           $original;
 
-  for my $recipe ($self->_stale_recipes($photo)) {
+  for my $recipe ($self->_stale_recipes($photo, $entry)) {
     my $dest = $dir->child($recipe->{name});
 
     # Write to a temporary name (keeping the extension, which is how libvips
@@ -335,7 +483,7 @@ sub _derive_one ($self, $photo) {
 
     rename "$tmp", "$dest" or die "can't rename $tmp to $dest: $!";
 
-    $state->{ $recipe->{name} } = {
+    $entry->{ $recipe->{name} } = {
       sha256  => $photo->sha256,
       version => $self->_version_of($photo, $recipe),
     };
@@ -343,7 +491,6 @@ sub _derive_one ($self, $photo) {
     $made++;
   }
 
-  $self->_state_file($photo)->spew_raw($JSON->encode($state));
   return $made;
 }
 

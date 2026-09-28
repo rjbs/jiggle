@@ -9,6 +9,8 @@ use Jiggle::Derive;
 use Jiggle::Ingest;
 use Jiggle::Library;
 use Jiggle::Photo;
+use Jiggle::Site;
+use JSON::MaybeXS ();
 use Path::Tiny ();
 
 for my $tool (qw( vips ffmpeg exiftool )) {
@@ -56,8 +58,9 @@ sub rotated_mov_with_gps {
 
 # Ingest a file into a fresh library and make its renditions.  With a
 # rotate, the photo is given that extra rotation first, as an importer would.
+my $LIBRARIES = 0;
 sub derived_library ($file, $rotate = 0) {
-  my $root = $tmp->child('lib-' . $file->basename . "-$rotate");
+  my $root = $tmp->child('lib-' . ++$LIBRARIES);
   $root->child('jiggle.toml')->touchpath;
   my $library = Jiggle::Library->new({ root => $root });
 
@@ -142,6 +145,41 @@ my @images = qw( h480.webp 500.webp 1024.webp 2048.webp og.jpg );
   renditions_ok('photo turned by hand', derived_library($src, 90),
     type => 'photo', size => [ 48, 64 ], published => \@images);
 }
+
+subtest 'old per-photo state files are migrated into the manifest' => sub {
+  my ($library, $photo) = derived_library(jpeg_with_gps(), 0);
+
+  # Make the library look like one from before the manifest.
+  my $manifest = $library->derived_dir->child('manifest.json');
+  my $entry = JSON::MaybeXS::decode_json($manifest->slurp_raw)->{photos}{ $photo->id };
+  my $old = $library->derived_path($photo->id, 'state.json');
+  $old->spew_raw(JSON::MaybeXS::encode_json($entry));
+  $manifest->remove;
+
+  my $derive = Jiggle::Derive->new({ library => $library, jobs => 1 });
+  is($derive->derive_photos($photo), 0, 'nothing remade');
+  ok(-e $manifest, 'manifest written');
+  ok(! -e $old, 'old state file removed');
+  ok($derive->is_complete($photo), 'the photo is complete');
+};
+
+subtest 'a remade rendition is relinked in the site' => sub {
+  my ($library, $photo) = derived_library(jpeg_with_gps(), 0);
+
+  Jiggle::Site->new({ library => $library })->build;
+  my $published = $library->root->child('site', 'p', $photo->id, '1024.webp');
+  my $derived   = $library->derived_path($photo->id, '1024.webp');
+  is((stat $published)[1], (stat $derived)[1], 'published file is the rendition');
+
+  # Turning the photo remakes its renditions as new files.
+  my $turned = Jiggle::Photo->new({ %$photo, rotate => 90 });
+  $library->meta_path($photo->id)->spew_utf8($turned->as_toml);
+  my $fresh = Jiggle::Library->new({ root => $library->root });
+  Jiggle::Derive->new({ library => $fresh, jobs => 1 })->derive_photos($fresh->photos);
+  Jiggle::Site->new({ library => $fresh })->build;
+
+  is((stat $published)[1], (stat $derived)[1], 'published file is the new rendition');
+};
 
 subtest 'an unreadable original is reported, not fatal' => sub {
   my $good = $tmp->child('src/good.jpg');
