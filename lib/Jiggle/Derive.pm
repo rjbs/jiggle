@@ -188,9 +188,28 @@ sub derive_photos ($self, @photos) {
   my $warned = keys $self->_warned->%*;
   $self->logger->("$warned photo(s) had warnings; see above") if $warned;
 
-  die "failed to derive: @failed\n" if @failed;
+  # One unreadable original (a truncated download, say) mustn't stop a build
+  # of thousands, so failures are reported, not fatal.  The site leaves out
+  # any photo whose renditions are missing.  -- claude, 2026-09-27
+  if (@failed) {
+    $self->_failed->@* = @failed;
+    $self->logger->(sprintf 'failed to make renditions for %d photo(s): %s',
+      0 + @failed, join q{ }, sort @failed);
+  }
+
   return $made;
 }
+
+=method failed
+
+This returns the ids of the photos whose renditions couldn't be made in the
+last C<derive_photos>.
+
+=cut
+
+has _failed => (is => 'ro', init_arg => undef, default => sub { [] });
+
+sub failed ($self) { $self->_failed->@* }
 
 =method warnings
 

@@ -123,6 +123,32 @@ my @images = qw( h480.webp 500.webp 1024.webp 2048.webp og.jpg );
     type => 'video', size => [ 48, 64 ], published => [ @images, 'video.mp4' ]);
 }
 
+subtest 'an unreadable original is reported, not fatal' => sub {
+  my $good = $tmp->child('src/good.jpg');
+  my $bad  = $tmp->child('src/bad.jpg');
+  $good->parent->mkpath;
+  run('vips', 'gaussnoise', "$good", 320, 240);
+  run('vips', 'gaussnoise', "$bad",  640, 480);
+
+  my $root = $tmp->child('lib-unreadable');
+  $root->child('jiggle.toml')->touchpath;
+  my $library = Jiggle::Library->new({ root => $root });
+  my ($g, $b) = Jiggle::Ingest->new({ library => $library })->ingest_files($good, $bad);
+
+  # libvips makes the best of most damaged JPEGs, so to be sure of a failure,
+  # the original goes missing instead.
+  my $original = $library->original_path($b);
+  chmod 0644, "$original";
+  $original->remove;
+
+  my $derive = Jiggle::Derive->new({ library => $library, jobs => 1 });
+  my $ok = eval { $derive->derive_photos($g, $b); 1 };
+
+  ok($ok, 'derive_photos returned') or diag $@;
+  is_deeply([ $derive->failed ], [ $b->id ], 'the bad one is reported as failed');
+  ok(-e $library->derived_path($g->id, '1024.webp'), 'the good one was still made');
+};
+
 subtest 'a damaged original is reported by photo' => sub {
   my $file = $tmp->child('src/truncated.jpg');
   $file->parent->mkpath;

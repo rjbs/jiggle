@@ -69,6 +69,18 @@ has photos => (
   is => 'lazy',
   init_arg => undef,
   default  => sub ($self) {
+    # A photo whose renditions are missing (because its original couldn't be
+    # read) is left out, like a private one, so that nothing links to files
+    # that aren't there.
+    my (@ready, @missing);
+    for my $photo (grep {; $_->is_public } $self->library->photos) {
+      if ($self->_renditions_present($photo)) { push @ready, $photo }
+      else                                    { push @missing, $photo->id }
+    }
+
+    $self->logger->(sprintf 'leaving out %d photo(s) with missing renditions: %s',
+      0 + @missing, join q{ }, sort @missing) if @missing;
+
     # Newest first.  Photos with no date sort last, by id, so the order is at
     # least stable.
     return [
@@ -77,10 +89,17 @@ has photos => (
         || (($b->taken // '') cmp ($a->taken // ''))
         || ($a->id cmp $b->id)
       }
-      grep {; $_->is_public } $self->library->photos
+      @ready
     ];
   },
 );
+
+sub _renditions_present ($self, $photo) {
+  for my $recipe (Jiggle::Derive->published_recipes_for($photo)) {
+    return 0 unless -e $self->library->derived_path($photo->id, $recipe->{name});
+  }
+  return 1;
+}
 
 has _photo_by_id => (
   is => 'lazy',
@@ -493,7 +512,6 @@ sub _build_photo_pages ($self, $photos) {
 
     for my $recipe (Jiggle::Derive->published_recipes_for($photo)) {
       my $source = $self->library->derived_path($id, $recipe->{name});
-      die "missing rendition $source\n" unless -e $source;
       $w->link_file("p/$id/$recipe->{name}", $source);
     }
   }

@@ -48,6 +48,25 @@ subtest 'private photos are never published' => sub {
   ok(! -e $dir->child('tags/secret'), 'tag used only by a private photo has no page');
 };
 
+subtest 'a photo whose renditions are missing is left out' => sub {
+  my ($library, $root) = library_with(
+    photos => [
+      { id => 'good0001', taken => '2016-11-27T14:00:00' },
+      { id => 'bad00001', taken => '2016-11-27T14:21:25' },
+    ],
+    albums => [ { slug => 'melb', title => 'Melbourne', photos => [ 'bad00001', 'good0001' ] } ],
+  );
+
+  $library->derived_path('bad00001', 'h480.webp')->remove;
+
+  my $site = Jiggle::Site->new({ library => $library });
+  ok(eval { $site->build; 1 }, 'the build finishes') or diag $@;
+
+  my $dir = $root->child('site');
+  ok(-e $dir->child('p/good0001/index.html'), 'the good photo is published');
+  never_mentioned_ok('the photo with missing renditions', $dir, 'bad00001');
+};
+
 subtest 'albums with only private photos are omitted' => sub {
   my ($site, $dir) = built_site(
     photos => [ { id => 'priv0002', visibility => 'private' } ],
