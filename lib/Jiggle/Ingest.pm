@@ -209,6 +209,11 @@ sub _facts_for ($self, $path) {
 
   my ($w, $h) = ($tag->('ImageWidth'), $tag->('ImageHeight'));
   ($w, $h) = ($h, $w) if ($tag->('Orientation') // 1) >= 5;
+
+  # The clockwise turn the EXIF orientation calls for, which libvips applies.
+  # Mirrored orientations (2, 4, 5, 7) are counted by their turn alone.
+  $facts{rotation} = { 3 => 180, 4 => 180, 5 => 90, 6 => 90, 7 => 270, 8 => 270 }
+    ->{ $tag->('Orientation') // 1 } // 0;
   @facts{qw( width height )} = ($w, $h);
 
   if (my $dt = $tag->('DateTimeOriginal') // $tag->('CreateDate')) {
@@ -240,6 +245,7 @@ sub _video_facts ($tag, $facts) {
   # stored as landscape with a 90-degree rotation.
   my ($w, $h) = ($tag->('ImageWidth'), $tag->('ImageHeight'));
   ($w, $h) = ($h, $w) if ($tag->('Rotation') // 0) % 180;
+  $facts->{rotation} = ($tag->('Rotation') // 0) % 360;
   @$facts{qw( width height )} = ($w, $h);
 
   # QuickTime's CreationDate is local time with an offset.  CreateDate is in

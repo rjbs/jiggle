@@ -280,10 +280,16 @@ sub _state ($self, $photo) {
 # recipe changes, too.  Folding the poster's version into theirs handles that
 # without any special cases elsewhere.  -- claude, 2026-09-27
 sub _version_of ($self, $photo, $recipe) {
-  return "$recipe->{version}"
-    unless $photo->type eq 'video' and $recipe->{kind} eq 'image';
+  my $version = "$recipe->{version}";
 
-  return "$recipe->{version}+poster$POSTER->{version}";
+  $version .= "+poster$POSTER->{version}"
+    if $photo->type eq 'video' and $recipe->{kind} eq 'image';
+
+  # An extra rotation changes every rendition, so it's part of the version:
+  # changing a photo's rotate remakes its renditions, and only its.
+  $version .= "+rot" . $photo->rotate if $photo->rotate;
+
+  return $version;
 }
 
 sub _stale_recipes ($self, $photo) {
@@ -318,9 +324,13 @@ sub _derive_one ($self, $photo) {
     # leaves a partial file where a finished one belongs.
     my $tmp = $dir->child(".tmp-$recipe->{name}");
 
-    if    ($recipe->{kind} eq 'image')  { $self->_make_image($image_source, $tmp, $recipe) }
+    # A video's poster and video are turned as they're made, so the images
+    # made from its poster are upright already.
+    my $turn = $photo->type eq 'video' && $recipe->{kind} eq 'image' ? 0 : $photo->rotate;
+
+    if    ($recipe->{kind} eq 'image')  { $self->_make_image($image_source, $tmp, $recipe, $turn) }
     elsif ($recipe->{kind} eq 'poster') { $self->_make_poster($photo, $original, $tmp) }
-    elsif ($recipe->{kind} eq 'video')  { $self->_make_video($original, $tmp, $recipe) }
+    elsif ($recipe->{kind} eq 'video')  { $self->_make_video($original, $tmp, $recipe, $photo->rotate) }
     else  { die "unknown recipe kind $recipe->{kind}\n" }
 
     rename "$tmp", "$dest" or die "can't rename $tmp to $dest: $!";
@@ -341,13 +351,29 @@ sub _run (@cmd) {
   system(@cmd) == 0 or die "command failed: @cmd\n";
 }
 
-sub _make_image ($self, $source, $dest, $recipe) {
+sub _make_image ($self, $source, $dest, $recipe, $rotate = 0) {
+  my ($w, $h) = $recipe->{fit}->@*;
+  my $out = "$dest\[$recipe->{opts},keep=none]";
+
+  unless ($rotate) {
+    _run(
+      'vips', 'thumbnail', "$source", $out, $w, '--height', $h,
+      '--size', 'down', '--export-profile', 'srgb',
+    );
+    return;
+  }
+
+  # With an extra rotation, shrink into the box as it will be after turning
+  # (swapped for a quarter turn), into an uncompressed intermediate, then
+  # turn it while encoding the rendition.
+  ($w, $h) = ($h, $w) if $rotate % 180;
+  my $tmp = Path::Tiny->tempfile(SUFFIX => '.v');
+
   _run(
-    'vips', 'thumbnail', "$source", "$dest\[$recipe->{opts},keep=none]",
-    $recipe->{fit}[0], '--height', $recipe->{fit}[1],
-    '--size', 'down',
-    '--export-profile', 'srgb',
+    'vips', 'thumbnail', "$source", "$tmp", $w, '--height', $h,
+    '--size', 'down', '--export-profile', 'srgb',
   );
+  _run('vips', 'rot', "$tmp", $out, "d$rotate");
 }
 
 my @FFMPEG = qw( ffmpeg -nostdin -hide_banner -loglevel error -y );
@@ -358,18 +384,32 @@ sub _make_poster ($self, $photo, $source, $dest) {
   my $at = List::Util::min(1, ($photo->duration // 0) / 2);
 
   # ffmpeg applies the rotation flag while decoding, so the frame comes out
-  # upright, which is what the image renditions expect.
+  # upright, which is what the image renditions expect.  Any extra rotation
+  # is applied here, too.
+  my @turn = _turn_filter($photo->rotate);
+
   _run(
     @FFMPEG,
     '-ss', $at, '-i', "$source",
+    (@turn ? ('-vf', join q{,}, @turn) : ()),
     '-frames:v', 1,
     '-update', 1,
     "$dest",
   );
 }
 
-sub _make_video ($self, $source, $dest, $recipe) {
+# ffmpeg filters that turn a frame clockwise by the given number of degrees.
+sub _turn_filter ($rotate) {
+  return ()                                 unless $rotate;
+  return ('transpose=clock')                if $rotate == 90;
+  return ('hflip', 'vflip')                 if $rotate == 180;
+  return ('transpose=cclock')               if $rotate == 270;
+  die "can't turn by $rotate degrees\n";
+}
+
+sub _make_video ($self, $source, $dest, $recipe, $rotate = 0) {
   my ($max_w, $max_h) = $recipe->{fit}->@*;
+  my @turn = _turn_filter($rotate);
 
   _run(
     @FFMPEG,
@@ -382,8 +422,9 @@ sub _make_video ($self, $source, $dest, $recipe) {
 
     # Scaling happens after rotation, so these limits apply to the upright
     # frame.  H.264 needs even dimensions.
-    '-vf', "scale=w='min($max_w,iw)':h='min($max_h,ih)'"
-         . ':force_original_aspect_ratio=decrease:force_divisible_by=2',
+    '-vf', join(q{,}, @turn,
+      "scale=w='min($max_w,iw)':h='min($max_h,ih)'"
+      . ':force_original_aspect_ratio=decrease:force_divisible_by=2'),
 
     '-c:v', 'libx264', '-preset', 'slow', '-crf', 23,
     '-profile:v', 'high', '-pix_fmt', 'yuv420p',

@@ -61,6 +61,8 @@ round_trips_ok('everything',
 
 round_trips_ok('local datetime', taken => '2026-07-17T17:23:17');
 
+round_trips_ok('extra rotation', rotate => 90);
+
 round_trips_ok('source mtime', original => {
   file => 'IMG_9971.JPG', ext => 'jpg', sha256 => 'f' x 64,
   bytes => 1000, width => 4000, height => 3000,
@@ -86,5 +88,17 @@ rendition_size_is('rounds to nearest', 5712, 4284, '500.webp',  [ 500, 375 ]);
 rendition_size_is('row, landscape',    5712, 4284, 'h480.webp', [ 640, 480 ]);
 rendition_size_is('row, portrait',     4284, 5712, 'h480.webp', [ 360, 480 ]);
 rendition_size_is('row, panorama',    10000, 1000, 'h480.webp', [ 1920, 192 ]);
+
+sub rotated_size_is ($desc, $w, $h, $rotate, $rendition, $want) {
+  my $photo = photo(rotate => $rotate, original => {
+    file => 'x.jpg', ext => 'jpg', sha256 => 'f' x 64, bytes => 1,
+    width => $w, height => $h,
+  });
+  is_deeply([ Jiggle::Derive->rendition_size($photo, $rendition) ], $want, "rotated size: $desc");
+}
+
+rotated_size_is('turned a quarter', 4000, 3000,  90, '1024.webp', [ 768, 1024 ]);
+rotated_size_is('turned a half',    4000, 3000, 180, '1024.webp', [ 1024, 768 ]);
+rotated_size_is('turned back',      4000, 3000, 270, 'h480.webp', [ 360, 480 ]);
 
 done_testing;

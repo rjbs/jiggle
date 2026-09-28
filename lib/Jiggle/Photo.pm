@@ -69,8 +69,26 @@ sub is_public ($self) { $self->visibility eq 'public' }
 
 sub ext    ($self) { $self->original->{ext}    }
 sub sha256 ($self) { $self->original->{sha256} }
-sub width  ($self) { $self->original->{width}  }
-sub height ($self) { $self->original->{height} }
+# Degrees to turn the picture clockwise, after the correction its own EXIF
+# orientation calls for: a photo rotated by hand on Flickr, say.  Usually 0.
+has rotate => (
+  is  => 'ro',
+  default => 0,
+  isa => sub ($r) {
+    Carp::croak("rotate must be 0, 90, 180, or 270, not $r")
+      unless $r == 0 or $r == 90 or $r == 180 or $r == 270;
+  },
+);
+
+# The dimensions as displayed: the original's (already upright by its EXIF
+# orientation), turned by any extra rotation.
+sub width ($self) {
+  $self->original->{ $self->rotate % 180 ? 'height' : 'width' };
+}
+
+sub height ($self) {
+  $self->original->{ $self->rotate % 180 ? 'width' : 'height' };
+}
 sub duration ($self) { $self->original->{duration} }
 
 sub is_video ($self) { $self->type eq 'video' }
@@ -122,6 +140,7 @@ sub as_toml ($self) {
     join q{, }, map {; _str($_) } $self->tags->@*;
 
   push @lines, sprintf 'visibility = %s', _str($self->visibility);
+  push @lines, sprintf 'rotate = %d', $self->rotate if $self->rotate;
   push @lines, sprintf 'flickr_id = %s', _str($self->flickr_id)
     if defined $self->flickr_id;
   push @lines, sprintf 'flickr_uploaded = %s', $self->flickr_uploaded

@@ -8,6 +8,7 @@ use Image::ExifTool ();
 use Jiggle::Derive;
 use Jiggle::Ingest;
 use Jiggle::Library;
+use Jiggle::Photo;
 use Path::Tiny ();
 
 for my $tool (qw( vips ffmpeg exiftool )) {
@@ -53,12 +54,20 @@ sub rotated_mov_with_gps {
   return $file;
 }
 
-sub derived_library ($file) {
-  my $root = $tmp->child('lib-' . $file->basename);
+# Ingest a file into a fresh library and make its renditions.  With a
+# rotate, the photo is given that extra rotation first, as an importer would.
+sub derived_library ($file, $rotate = 0) {
+  my $root = $tmp->child('lib-' . $file->basename . "-$rotate");
   $root->child('jiggle.toml')->touchpath;
   my $library = Jiggle::Library->new({ root => $root });
 
   my ($photo) = Jiggle::Ingest->new({ library => $library })->ingest_files($file);
+
+  if ($rotate) {
+    $photo = Jiggle::Photo->new({ %$photo, rotate => $rotate });
+    $library->meta_path($photo->id)->spew_utf8($photo->as_toml);
+  }
+
   Jiggle::Derive->new({ library => $library, jobs => 1 })->derive_photos($photo);
 
   return ($library, $photo);
@@ -121,6 +130,17 @@ my @images = qw( h480.webp 500.webp 1024.webp 2048.webp og.jpg );
 
   renditions_ok('rotated video', derived_library($src),
     type => 'video', size => [ 48, 64 ], published => [ @images, 'video.mp4' ]);
+
+  # Upright by its flag it's 48x64; a further quarter turn by hand makes it
+  # 64x48 again, in every rendition, the video included.
+  renditions_ok('rotated video, turned again by hand', derived_library($src, 90),
+    type => 'video', size => [ 64, 48 ], published => [ @images, 'video.mp4' ]);
+}
+
+{
+  my $src = jpeg_with_gps();
+  renditions_ok('photo turned by hand', derived_library($src, 90),
+    type => 'photo', size => [ 48, 64 ], published => \@images);
 }
 
 subtest 'an unreadable original is reported, not fatal' => sub {
