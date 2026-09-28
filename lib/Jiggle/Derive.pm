@@ -262,8 +262,21 @@ several photos at once.  It returns the number of renditions made.
 
 =cut
 
+# True if this photo's renditions failed before, and its original hasn't
+# changed since; unless verifying, it isn't retried.
+sub _failed_before ($self, $photo, $entry = $self->_entry($photo)) {
+  return 0 if $self->verify;
+  return ($entry->{_failed}{sha256} // '') eq $photo->sha256;
+}
+
 sub derive_photos ($self, @photos) {
   $self->remove_obsolete(@photos);
+
+  if (my @before = sort map {; $_->id } grep {; $self->_failed_before($_) } @photos) {
+    $self->logger->(sprintf
+      'not retrying %d photo(s) whose renditions failed before (use --verify to retry): %s',
+      0 + @before, "@before");
+  }
 
   my @work = grep {; $self->_stale_recipes($_) } @photos;
   unless (@work) {
@@ -326,9 +339,15 @@ sub derive_photos ($self, @photos) {
     my $error = $@;
     my @warnings = _warnings_from($errors);
 
+    # A failure is remembered, so that the same unreadable original isn't
+    # retried on every build.  It's retried when the original changes, or
+    # with verify.
     unless (defined $n) {
+      $entry->{_failed} = { sha256 => $photo->sha256 };
       $pm->finish(1, { entry => $entry, warnings => [ @warnings, "error: $error" ] });
     }
+
+    delete $entry->{_failed};
 
     $pm->finish(0, { made => $n, entry => $entry, warnings => \@warnings });
   }
@@ -398,17 +417,28 @@ number of files removed.
 sub remove_obsolete ($self, @photos) {
   my $removed = 0;
 
+  # This is the first pass over every photo, so it's where old state files
+  # are migrated, which is slow the first time; hence the progress.
+  my $progress = Jiggle::Progress->new({
+    label  => 'checking renditions',
+    total  => scalar @photos,
+    logger => $self->logger,
+  });
+
   for my $photo (@photos) {
+    $progress->tick;
+
     my %keep  = map {; $_->{name} => 1 } $self->recipes_for($photo);
     my $entry = $self->_entry($photo);
 
-    my @gone = grep {; ! $keep{$_} } keys %$entry;
+    # Keys starting with an underscore are notes, not renditions.
+    my @gone = grep {; ! $keep{$_} and ! /\A_/ } keys %$entry;
     if (@gone) {
       for my $name (@gone) {
         my $file = $self->library->derived_path($photo->id, $name);
         $removed++ if -e $file and $file->remove;
       }
-      $self->_set_entry($photo->id, { map {; $_ => $entry->{$_} } grep {; $keep{$_} } keys %$entry });
+      $self->_set_entry($photo->id, { map {; $_ => $entry->{$_} } grep {; $keep{$_} or /\A_/ } keys %$entry });
     }
 
     next unless $self->verify;
@@ -422,6 +452,7 @@ sub remove_obsolete ($self, @photos) {
     }
   }
 
+  $progress->done;
   $self->logger->("removed $removed obsolete rendition file(s)") if $removed;
   return $removed;
 }
@@ -444,6 +475,8 @@ sub _version_of ($self, $photo, $recipe) {
 
 sub _stale_recipes ($self, $photo, $entry = $self->_entry($photo)) {
   my $dir = $self->library->derived_path($photo->id);
+
+  return if $self->_failed_before($photo, $entry);
 
   return grep {;
     my $have = $entry->{ $_->{name} };

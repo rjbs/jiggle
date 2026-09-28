@@ -205,6 +205,15 @@ subtest 'an unreadable original is reported, not fatal' => sub {
   ok($ok, 'derive_photos returned') or diag $@;
   is_deeply([ $derive->failed ], [ $b->id ], 'the bad one is reported as failed');
   ok(-e $library->derived_path($g->id, '1024.webp'), 'the good one was still made');
+
+  my $again = Jiggle::Derive->new({ library => $library, jobs => 1 });
+  $again->derive_photos($g, $b);
+  is_deeply([ $again->failed ], [], 'the next run does not retry it');
+  ok(! $again->is_complete($b), '...and it is still incomplete');
+
+  my $verify = Jiggle::Derive->new({ library => $library, jobs => 1, verify => 1 });
+  $verify->derive_photos($g, $b);
+  is_deeply([ $verify->failed ], [ $b->id ], 'with verify, it is retried');
 };
 
 subtest 'a damaged original is reported by photo' => sub {
