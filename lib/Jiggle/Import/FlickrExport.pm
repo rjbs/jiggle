@@ -197,7 +197,13 @@ sub _photo_attributes ($self, $record, $facts) {
 
   # Flickr's rotation includes the turn EXIF calls for, which libvips and
   # ffmpeg apply on their own.  Only the rest is a rotation done by hand.
-  my $rotate = (($record->{rotation} // 0) - ($facts->{rotation} // 0)) % 360;
+  #
+  # Flickr doesn't track rotation for video at all: every video's record
+  # says 0, whatever its own rotation flag says.  Taking that 0 at its word
+  # turned 131 of 197 videos the wrong way.  So a video's rotation is its
+  # flag's alone.  -- claude, 2026-09-28
+  my $rotate = ($facts->{kind} // '') eq 'video' ? 0
+             : (($record->{rotation} // 0) - ($facts->{rotation} // 0)) % 360;
 
   return {
     title       => $record->{name} // '',

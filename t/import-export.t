@@ -142,6 +142,27 @@ subtest 'rotation' => sub {
   photo_is('EXIF, then by hand',       $photos, 4003, rotate => 180, width => 30, height => 42);
 };
 
+subtest 'video rotation' => sub {
+  plan skip_all => 'ffmpeg is needed to make a test video'
+    unless system('ffmpeg -version >/dev/null 2>&1') == 0;
+
+  my $root = $tmp->child('export-video');
+
+  # Flickr's record says 0 for every video, whatever the video's own
+  # rotation flag says; here, the flag says it's a portrait clip.
+  export_photo($root, id => 7001, rotation => 0);
+
+  my $mov = $root->child('photos', '1', "portrait-clip_7001.mov");
+  $mov->parent->mkpath;
+  system(qw( ffmpeg -nostdin -loglevel error -y -f lavfi -i testsrc=size=64x48:rate=10:duration=1 ),
+    qw( -c:v libx264 -pix_fmt yuv420p ), "$mov") == 0 or die "ffmpeg failed";
+  system(qw( exiftool -q -overwrite_original -Rotation=90 ), "$mov") == 0 or die "exiftool failed";
+
+  my (undef, $photos) = imported($root);
+  photo_is('only its own flag turns it', $photos, 7001,
+    type => 'video', rotate => 0, width => 48, height => 64);
+};
+
 subtest 'albums' => sub {
   my $root = $tmp->child('export3');
 

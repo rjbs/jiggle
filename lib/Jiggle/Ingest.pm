@@ -85,7 +85,8 @@ its EXIF data does:
 =for :list
 * metadata
 A code reference, called with the facts read from the file (as a hash
-reference: C<taken>, C<location>, C<width>, and so on).  It returns a hash
+reference: C<kind> ("photo" or "video"), C<taken>, C<location>, C<width>,
+C<rotation>, and so on).  It returns a hash
 reference of L<Jiggle::Photo> attributes, which are used in place of the
 defaults: C<title>, C<taken>, C<tags>, and so on.
 * record_source_mtime
@@ -130,7 +131,8 @@ sub ingest_file ($self, $path, $arg = {}) {
     return { status => 'skipped', reason => $reason };
   }
 
-  my $extra = $arg->{metadata} ? $arg->{metadata}->($facts) : {};
+  # The callback also learns what kind of media this is.
+  my $extra = $arg->{metadata} ? $arg->{metadata}->({ %$facts, kind => $kind }) : {};
 
   my $photo = Jiggle::Photo->new({
     type  => $kind,
