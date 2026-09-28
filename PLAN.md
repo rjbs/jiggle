@@ -1,6 +1,8 @@
 # jiggle: a static photo site to replace Flickr
 
-This is the working plan.  It records what we've decided, what's still open,
+This is the working plan.  The storage layer (the library's layout, schema, and what
+can change later) is specified in `STORAGE.md`, which supersedes the library
+sections here where they differ.  It records what we've decided, what's still open,
 and the order we expect to build things in.  Open questions are tracked as
 Loose Threads (`lt list`); this document names them but doesn't duplicate
 their detail.
