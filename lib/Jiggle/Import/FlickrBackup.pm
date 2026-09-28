@@ -3,8 +3,6 @@ use v5.36;
 
 use Moo;
 
-use Jiggle::Album;
-use Jiggle::Ingest;
 use Jiggle::Markdown qw( html_to_markdown );
 use Jiggle::Progress;
 use Path::Tiny ();
@@ -53,21 +51,12 @@ archive twice adds nothing the second time.
 
 =cut
 
-has library => (is => 'ro', required => 1);
+with 'Jiggle::Role::FlickrImporter';
 
 has root => (
   is => 'ro',
   required => 1,
   coerce   => sub ($r) { Path::Tiny::path($r)->absolute },
-);
-
-has logger => (is => 'ro', default => sub { sub { } });
-
-has _ingest => (
-  is => 'lazy',
-  default => sub ($self) {
-    Jiggle::Ingest->new({ library => $self->library, logger => $self->logger });
-  },
 );
 
 my %NS = (
@@ -321,14 +310,7 @@ sub _toml_datetime ($datetime) {
 }
 
 sub _photo_attributes ($self, $meta, $facts) {
-  # Prefer the file's EXIF date when it agrees with Flickr's to the second,
-  # since it may carry a real offset.  Otherwise, Flickr's is used, since the
-  # taken date may have been corrected there.
-  my $taken = $meta->{taken};
-  if (defined $facts->{taken} and defined $taken
-      and index($facts->{taken}, $taken) == 0) {
-    $taken = $facts->{taken};
-  }
+  my $taken = $self->taken_from($meta->{taken}, $facts);
 
   my $location = $meta->{location} // $facts->{location};
   $location = { %$location, private => 1 } if $location and $meta->{location_private};
@@ -346,33 +328,19 @@ sub _photo_attributes ($self, $meta, $facts) {
 }
 
 sub _write_albums ($self, $sets, $id_for_flickr) {
-  my %existing = map {; ($_->flickr_id // '') => $_ } $self->library->albums;
-  my %slug_taken = map {; $_->slug => 1 } $self->library->albums;
-
-  my $n = 0;
-  for my $set_id (sort keys %$sets) {
-    my $set = $sets->{$set_id};
-
-    my ($photos, $cover) = $self->_album_order($set_id, $set, $id_for_flickr);
-
-    my $slug = $existing{$set_id} ? $existing{$set_id}->slug
-             : _unique_slug($set->{title} || "album-$set_id", \%slug_taken);
-
-    my $album = Jiggle::Album->new({
-      slug        => $slug,
-      title       => $set->{title} || "Album $set_id",
-      description => $set->{description} // '',
-      cover       => $cover,
+  my @albums = map {;
+    my $set = $sets->{$_};
+    my ($photos, $cover) = $self->_album_order($_, $set, $id_for_flickr);
+    {
+      flickr_id   => $_,
+      title       => $set->{title},
+      description => $set->{description},
       photos      => $photos,
-      flickr_id   => $set_id,
-    });
+      cover       => $cover,
+    };
+  } keys %$sets;
 
-    $self->library->albums_dir->mkpath;
-    $self->library->albums_dir->child("$slug.toml")->spew_utf8($album->as_toml);
-    $n++;
-  }
-
-  return $n;
+  return $self->write_albums(\@albums);
 }
 
 # From photosets/ID.xml if the backup has it, or else by date taken.
@@ -395,20 +363,6 @@ sub _album_order ($self, $set_id, $set, $id_for_flickr) {
                $set->{members}->@*;
 
   return (\@photos, $photos[0]);
-}
-
-sub _unique_slug ($title, $taken) {
-  my $slug = lc $title;
-  $slug =~ s/[^\p{Alnum}]+/-/g;
-  $slug =~ s/\A-+|-+\z//g;
-  $slug = 'album' unless length $slug;
-
-  my $try = $slug;
-  my $n = 1;
-  $try = "$slug-" . ++$n while $taken->{$try};
-
-  $taken->{$try} = 1;
-  return $try;
 }
 
 1;
