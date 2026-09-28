@@ -18,7 +18,9 @@ Jiggle::TestLibrary - make throwaway libraries for tests
 
 C<library_with> builds a library in a temporary directory.  The site builder
 only hardlinks renditions, never reads them, so placeholder files stand in
-for real images and tests using this don't need libvips.
+for real images and tests using this don't need libvips.  Each photo's
+renditions are recorded as made in derive's manifest, except for the ids
+given as C<unrendered>, which are left as if their renditions had failed.
 
 =cut
 
@@ -34,6 +36,8 @@ sub library_with (%arg) {
   $root->child('jiggle.toml')->spew_utf8($arg{config} // '');
 
   my $library = Jiggle::Library->new({ root => $root });
+  my $derive  = Jiggle::Derive->new({ library => $library });
+  my %unrendered = map {; $_ => 1 } ($arg{unrendered} // [])->@*;
 
   for my $spec ($arg{photos}->@*) {
     my $photo = Jiggle::Photo->new({
@@ -51,7 +55,11 @@ sub library_with (%arg) {
       $file->parent->mkpath;
       $file->spew_raw("placeholder");
     }
+
+    $derive->mark_current($photo) unless $unrendered{ $photo->id };
   }
+
+  $derive->save_manifest;
 
   for my $album (($arg{albums} // [])->@*) {
     $library->albums_dir->mkpath;

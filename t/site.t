@@ -49,22 +49,33 @@ subtest 'private photos are never published' => sub {
 };
 
 subtest 'a photo whose renditions are missing is left out' => sub {
-  my ($library, $root) = library_with(
-    photos => [
-      { id => 'good0001', taken => '2016-11-27T14:00:00' },
-      { id => 'bad00001', taken => '2016-11-27T14:21:25' },
-    ],
-    albums => [ { slug => 'melb', title => 'Melbourne', photos => [ 'bad00001', 'good0001' ] } ],
-  );
+  my $photos = [
+    { id => 'good0001', taken => '2016-11-27T14:00:00' },
+    { id => 'bad00001', taken => '2016-11-27T14:21:25' },
+  ];
+  my $albums = [ { slug => 'melb', title => 'Melbourne', photos => [ 'bad00001', 'good0001' ] } ];
 
-  $library->derived_path('bad00001', 'h480.webp')->remove;
+  # As when an original couldn't be rendered: derive never recorded it.
+  {
+    my ($library, $root) = library_with(photos => $photos, albums => $albums, unrendered => [ 'bad00001' ]);
 
-  my $site = Jiggle::Site->new({ library => $library });
-  ok(eval { $site->build; 1 }, 'the build finishes') or diag $@;
+    my $site = Jiggle::Site->new({ library => $library });
+    ok(eval { $site->build; 1 }, 'never rendered: the build finishes') or diag $@;
 
-  my $dir = $root->child('site');
-  ok(-e $dir->child('p/good0001/index.html'), 'the good photo is published');
-  never_mentioned_ok('the photo with missing renditions', $dir, 'bad00001');
+    my $dir = $root->child('site');
+    ok(-e $dir->child('p/good0001/index.html'), 'never rendered: the good photo is published');
+    never_mentioned_ok('never rendered', $dir, 'bad00001');
+  }
+
+  # A rendition deleted by hand isn't noticed unless verifying.
+  {
+    my ($library, $root) = library_with(photos => $photos, albums => $albums);
+    $library->derived_path('bad00001', 'h480.webp')->remove;
+
+    my $site = Jiggle::Site->new({ library => $library, verify => 1 });
+    ok(eval { $site->build; 1 }, 'deleted, with verify: the build finishes') or diag $@;
+    never_mentioned_ok('deleted, with verify', $root->child('site'), 'bad00001');
+  }
 };
 
 subtest 'albums with only private photos are omitted' => sub {
@@ -157,10 +168,37 @@ subtest 'rebuilding changes nothing, and pruning removes the stale' => sub {
 
   is((stat $page)[9], $mtime - 100, 'unchanged page was not rewritten');
   is($rebuild->writer->stats->{written}, 0, 'nothing written on rebuild');
+  ok($rebuild->writer->trusting_manifest, 'the rebuild went by the manifest');
 
+  # A photo removed from the library: the manifest knows its files.
+  $library->meta_path('bbbb0001')->remove;
+  Jiggle::Site->new({ library => Jiggle::Library->new({ root => $library->root }) })->build;
+  ok(! -e $dir->child('p/bbbb0001'), "a removed photo's files and directory are pruned");
+
+  # A stray file, of the kind left by a build that stopped before saving its
+  # manifest.  --verify walks the tree, so it's found.
   $dir->child('p/zzzz0001/index.html')->touchpath;
-  Jiggle::Site->new({ library => $library })->build;
-  ok(! -e $dir->child('p/zzzz0001'), 'stale file and its directory pruned');
+  Jiggle::Site->new({ library => $library, verify => 1 })->build;
+  ok(! -e $dir->child('p/zzzz0001'), 'with verify, a stray file is pruned');
+};
+
+subtest 'after an interrupted build, the manifest is not trusted' => sub {
+  my ($site, $dir, $library) = built_site(photos => [ { id => 'cccc0001' } ]);
+
+  # A build that got as far as writing a page, then stopped: its marker is
+  # left behind, and the page isn't in any manifest.
+  my $writer = Jiggle::Site->new({ library => $library })->writer;
+  ok($writer->trusting_manifest, 'the stopped build trusted the manifest');
+  $dir->child('p/zzzz0002/index.html')->touchpath;
+
+  my $next = Jiggle::Site->new({ library => $library });
+  $next->build;
+  ok(! $next->writer->trusting_manifest, 'the next build does not');
+  ok(! -e $dir->child('p/zzzz0002'), '...so the stray page is pruned');
+
+  my $after = Jiggle::Site->new({ library => $library });
+  $after->build;
+  ok($after->writer->trusting_manifest, 'and the build after that trusts it again');
 };
 
 # The ids linked from a page, in page order, each counted once.

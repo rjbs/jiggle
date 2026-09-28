@@ -57,6 +57,17 @@ has logger => (is => 'ro', default => sub { sub { } });
 # page is still written; it just won't find anything.)
 has search => (is => 'ro');
 
+# The Jiggle::Derive whose manifest says which renditions exist.  The build
+# command passes the one it just used.
+has derive => (
+  is => 'lazy',
+  default => sub ($self) { Jiggle::Derive->new({ library => $self->library }) },
+);
+
+# If true, check files on disk rather than trusting the manifests; see
+# Jiggle::Site::Writer.
+has verify => (is => 'ro', default => 0);
+
 has config => (is => 'lazy', default => sub ($self) { $self->library->config });
 
 sub site_title ($self) { $self->config->{title}    // 'Photos' }
@@ -94,7 +105,12 @@ has photos => (
   },
 );
 
+# Whether a photo's renditions all exist, by derive's manifest; with verify,
+# by the files themselves, too.
 sub _renditions_present ($self, $photo) {
+  return 0 unless $self->derive->is_complete($photo);
+  return 1 unless $self->verify;
+
   for my $recipe (Jiggle::Derive->published_recipes_for($photo)) {
     return 0 unless -e $self->library->derived_path($photo->id, $recipe->{name});
   }
@@ -416,7 +432,13 @@ sub _opengraph_video ($self, $photo) {
 has writer => (
   is => 'lazy',
   init_arg => undef,
-  default  => sub ($self) { Jiggle::Site::Writer->new({ root => $self->out_dir }) },
+  default  => sub ($self) {
+    Jiggle::Site::Writer->new({
+      root     => $self->out_dir,
+      manifest => $self->library->state_dir->child('site-manifest.json'),
+      verify   => $self->verify,
+    });
+  },
 );
 
 sub _write_page ($self, $rel, $template, $vars) {
@@ -462,11 +484,19 @@ sub build ($self) {
     # files are left alone.  -- claude, 2026-09-27
     $self->_phase('search index', sub {
       $w->prune({ except => 'pagefind/' });
-      $search->index_site($self->out_dir, $w);
+
+      # The index is made from the pages, so if none was written or removed,
+      # the old index is still right, and Pagefind (which reads every page)
+      # needn't run.  keep finds nothing to keep without a manifest.
+      if (! $w->html_changes and my $kept = $w->keep('pagefind/')) {
+        $self->logger->("search index: no page changed; kept $kept file(s)");
+      } else {
+        $search->index_site($self->out_dir, $w);
+      }
     });
   }
 
-  $self->_phase('pruning', sub { $w->prune });
+  $self->_phase('pruning', sub { $w->prune; $w->save_manifest });
 
   my $s = $w->stats;
   $self->logger->(sprintf
@@ -512,7 +542,8 @@ sub _build_photo_pages ($self, $photos) {
 
     for my $recipe (Jiggle::Derive->published_recipes_for($photo)) {
       my $source = $self->library->derived_path($id, $recipe->{name});
-      $w->link_file("p/$id/$recipe->{name}", $source);
+      $w->link_file("p/$id/$recipe->{name}", $source,
+        $self->derive->rendition_key($photo, $recipe->{name}) // '');
     }
   }
 

@@ -81,4 +81,37 @@ subtest 'an unchanged site rewrites no index files' => sub {
   is($again->writer->stats->{pruned},  0, 'nothing pruned');
 };
 
+# A Jiggle::Search that counts how often Pagefind is run.
+package Counting::Search {
+  use parent -norequire, 'Jiggle::Search';
+  our $RUNS = 0;
+  sub index_site { $RUNS++; shift->SUPER::index_site(@_) }
+}
+
+sub runs_while_building ($library, $code = sub {}) {
+  $code->();
+  local $Counting::Search::RUNS = 0;
+  Jiggle::Site->new({
+    library => Jiggle::Library->new({ root => $library->root }),
+    search  => bless({ %$search }, 'Counting::Search'),
+  })->build;
+  return $Counting::Search::RUNS;
+}
+
+subtest 'Pagefind runs only when a page changed' => sub {
+  my (undef, $dir, $library) = built_site(
+    photos => [ { id => 'dddd0001', title => 'Before' } ],
+    site   => { search => $search },
+  );
+
+  is(runs_while_building($library), 0, 'no page changed: not run');
+  indexed_urls_are('...and the index is kept', $dir, [ '/p/dddd0001/' ]);
+
+  my $meta = $library->meta_path('dddd0001');
+  is(runs_while_building($library, sub {
+    $meta->spew_utf8($meta->slurp_utf8 =~ s/^title = "Before"/title = "After"/mr);
+  }), 1, 'a title changed: run');
+  like(indexed($dir)->{'/p/dddd0001/'}, qr/After/, '...and the index has the new title');
+};
+
 done_testing;
