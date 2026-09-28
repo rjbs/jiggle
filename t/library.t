@@ -40,7 +40,10 @@ subtest 'parsed metadata is cached' => sub {
 };
 
 sub format_ok ($desc, $config, $want) {
-  my (undef, $root) = library_with(config => $config, photos => []);
+  # The config goes in after setup, which itself loads the library.
+  my (undef, $root) = library_with(photos => []);
+  $root->child('jiggle.toml')->spew_utf8($config);
+
   my $library = eval { Jiggle::Library->new({ root => $root }) };
 
   if (defined $want) {
