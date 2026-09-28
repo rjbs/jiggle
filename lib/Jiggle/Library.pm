@@ -76,6 +76,10 @@ sub meta_dir      ($self) { $self->root->child('meta')      }
 sub derived_dir   ($self) { $self->root->child('derived')   }
 sub albums_dir    ($self) { $self->meta_dir->child('albums') }
 
+# Flickr's own records of imported photos and albums, kept verbatim, so that
+# whatever the importer didn't use is still at hand.
+sub flickr_dir ($self) { $self->meta_dir->child('flickr') }
+
 =method id_for_digest
 
   my $id = $library->id_for_digest($sha256_hex);
@@ -147,7 +151,7 @@ has _photo_index => (
 
     for my $shard ($self->meta_dir->children) {
       next unless $shard->is_dir;
-      next if $shard->basename eq 'albums';
+      next if $shard->basename eq 'albums' or $shard->basename eq 'flickr';
 
       for my $file ($shard->children(qr/\.toml\z/)) {
         $progress->tick;

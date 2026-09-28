@@ -53,9 +53,10 @@ sub taken_from ($self, $flickr, $facts) {
   my $n = $importer->write_albums(\@albums);
 
 Each album is a hash of C<flickr_id>, C<title>, C<description>, C<photos>
-(jiggle ids, in order), and C<cover> (a jiggle id).  An album already in the
-library with the same C<flickr_id> is rewritten in place, keeping its slug;
-a new one gets a slug made from its title.  It returns the number written.
+(jiggle ids, in order), C<cover> (a jiggle id), and optionally C<created> (a
+TOML datetime).  An album already in the library with the same C<flickr_id>
+is rewritten in place, keeping its slug; a new one gets a slug made from its
+title.  It returns the number written.
 
 =cut
 
@@ -80,6 +81,7 @@ sub write_albums ($self, $albums) {
       cover       => $spec->{cover} // $spec->{photos}[0],
       photos      => $spec->{photos},
       flickr_id   => $spec->{flickr_id},
+      (defined $spec->{created} ? (created => $spec->{created}) : ()),
     });
 
     $self->library->albums_dir->child("$slug.toml")->spew_utf8($album->as_toml);

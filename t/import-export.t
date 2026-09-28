@@ -151,6 +151,7 @@ subtest 'albums' => sub {
       id => '72157603651676472', title => 'dining table, 2008-01', description => 'a table',
       photos => [ '5003', '5001', '9999', '5002' ],   # 9999 isn't in the export
       cover_photo => 'https://www.flickr.com/photos/rjbs/5001',
+      created => '1199674166',
     },
     { id => '72157600000000001', title => 'empty', photos => [ '9999' ] },
   );
@@ -163,6 +164,15 @@ subtest 'albums' => sub {
   is_deeply($album->photos, [ map {; $photos->{$_}->id } 5003, 5001, 5002 ], 'order kept, missing photo dropped');
   is($album->cover, $photos->{5001}->id, 'cover from the export');
   is($album->flickr_id, '72157603651676472', 'flickr id recorded');
+
+  # 1199674166 is 2008-01-07 02:49:26 UTC.
+  is(epoch_of($album->created), 1199674166, 'creation time recorded');
+
+  my $flickr = $tmp->child('lib-export3', 'meta', 'flickr');
+  is($flickr->child('5001.json')->slurp_raw,
+     $root->child('metadata', '1', 'photo_5001.json')->slurp_raw,
+     "each photo's Flickr record is kept, byte for byte");
+  ok(-e $flickr->child('albums.json'), 'and so is albums.json');
 };
 
 subtest 'recognizing an export' => sub {

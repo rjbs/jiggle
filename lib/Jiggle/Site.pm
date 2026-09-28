@@ -9,6 +9,7 @@ use JSON::MaybeXS ();
 use Jiggle::Progress;
 use List::Util ();
 use Time::HiRes ();
+use Time::Local ();
 use Jiggle::Derive;
 use Jiggle::Geo qw( in_private_zone );
 use Jiggle::Site::Writer;
@@ -123,6 +124,20 @@ has _photo_by_id => (
   default  => sub ($self) { return { map {; $_->id => $_ } $self->photos->@* } },
 );
 
+# A TOML datetime as epoch seconds, or undef.  Without an offset, it's taken
+# as UTC, which is close enough for sorting.
+sub _instant ($datetime) {
+  my ($y, $mo, $d, $h, $mi, $s, $zone) = ($datetime // '')
+    =~ /\A(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d+)?(Z|[-+]\d\d:\d\d)?\z/
+    or return;
+
+  my $epoch = Time::Local::timegm($s, $mi, $h, $d, $mo - 1, $y);
+  if ($zone and $zone =~ /\A([-+])(\d\d):(\d\d)\z/) {
+    $epoch -= ($1 eq '-' ? -1 : 1) * ($2 * 3600 + $3 * 60);
+  }
+  return $epoch;
+}
+
 =method public_location
 
   my $loc = $site->public_location($photo);
@@ -178,10 +193,20 @@ has albums => (
         description => $album->description,
         cover  => $cover,
         photos => \@photos,
+        created => $album->created,
       };
     }
 
-    return \@albums;
+    # Newest first; albums with no creation date go last, by title.  The
+    # dates may carry different offsets, so compare them as instants.
+    my %when = map {; $_->{slug} => _instant($_->{created}) } @albums;
+    return [
+      sort {;
+           (defined $when{ $b->{slug} } <=> defined $when{ $a->{slug} })
+        || (($when{ $b->{slug} } // 0) <=> ($when{ $a->{slug} } // 0))
+        || (fc $a->{title} cmp fc $b->{title})
+      } @albums
+    ];
   },
 );
 

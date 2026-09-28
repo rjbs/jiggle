@@ -138,6 +138,10 @@ sub run ($self) {
 
     $summary{ $result->{status} eq 'ingested' ? 'imported' : 'existing' }++;
     $id_for_flickr{$flickr_id} = $result->{id};
+
+    # Flickr's record is kept as it came, bytes and all, so that whatever
+    # the importer doesn't use (comments, people, counts, ...) isn't lost.
+    $self->_keep_flickr_record("$flickr_id.json", $file);
   }
 
   $progress->done;
@@ -231,6 +235,8 @@ sub _albums ($self, $id_for_flickr) {
                grep {; $_->is_dir } $self->root->child('metadata')->children;
   return [] unless $file;
 
+  $self->_keep_flickr_record('albums.json', $file);
+
   my @albums;
   for my $album (_load_json($file)->{albums}->@*) {
     my @photos = map {; $id_for_flickr->{$_} // () } ($album->{photos} // [])->@*;
@@ -242,10 +248,30 @@ sub _albums ($self, $id_for_flickr) {
       description => html_to_markdown($album->{description} // ''),
       photos      => \@photos,
       cover       => ($cover_flickr ? $id_for_flickr->{$cover_flickr} : undef),
+      _defined(created => scalar _epoch_to_datetime($album->{created})),
     };
   }
 
   return \@albums;
+}
+
+# Copy a file from the export into the library's meta/flickr, unchanged.  It's
+# written only if different, so re-importing doesn't make noise in git.
+sub _keep_flickr_record ($self, $name, $source) {
+  my $dest  = $self->library->flickr_dir->child($name);
+  my $bytes = $source->slurp_raw;
+  return if -e $dest and $dest->slurp_raw eq $bytes;
+
+  $dest->parent->mkpath;
+  $dest->spew_raw($bytes);
+}
+
+# An epoch time, like albums' "created", to a datetime with this machine's
+# offset at that moment.
+sub _epoch_to_datetime ($epoch) {
+  return unless defined $epoch and $epoch =~ /\A\d+\z/;
+  my $dt = DateTime->from_epoch(epoch => $epoch, time_zone => 'local');
+  return $dt->strftime('%Y-%m-%dT%H:%M:%S') . ($dt->strftime('%z') =~ s/(\d\d)\z/:$1/r);
 }
 
 1;

@@ -64,8 +64,10 @@ sub library_with (%arg) {
   for my $album (($arg{albums} // [])->@*) {
     $library->albums_dir->mkpath;
     $library->albums_dir->child("$album->{slug}.toml")->spew_utf8(
-      sprintf qq{title = "%s"\nphotos = [%s]\n},
-        $album->{title}, join q{, }, map {; qq{"$_"} } $album->{photos}->@*
+      sprintf qq{title = "%s"\n%sphotos = [%s]\n},
+        $album->{title},
+        ($album->{created} ? "created = $album->{created}\n" : ''),
+        join q{, }, map {; qq{"$_"} } $album->{photos}->@*
     );
   }
 

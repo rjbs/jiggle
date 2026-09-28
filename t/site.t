@@ -182,6 +182,22 @@ subtest 'rebuilding changes nothing, and pruning removes the stale' => sub {
   ok(! -e $dir->child('p/zzzz0001'), 'with verify, a stray file is pruned');
 };
 
+subtest 'albums are listed newest first' => sub {
+  my ($site, $dir) = built_site(
+    photos => [ { id => 'ffff0001' } ],
+    albums => [
+      { slug => 'older',   title => 'Older',   photos => [ 'ffff0001' ], created => '2008-01-07T10:00:00-05:00' },
+      { slug => 'undated', title => 'Undated', photos => [ 'ffff0001' ] },
+      { slug => 'newer',   title => 'Newer',   photos => [ 'ffff0001' ], created => '2008-01-07T11:00:00-05:00' },
+      # Earlier on the clock, but in a later zone: it's the newest instant.
+      { slug => 'newest',  title => 'Newest',  photos => [ 'ffff0001' ], created => '2008-01-07T09:30:00-08:00' },
+    ],
+  );
+
+  my @order = $dir->child('albums/index.html')->slurp_utf8 =~ m{href="/albums/([^/"]+)/"}g;
+  is_deeply(\@order, [qw( newest newer older undated )], 'by creation time, undated last');
+};
+
 subtest 'a library can be moved' => sub {
   my ($site, $dir, $library) = built_site(photos => [ { id => 'eeee0001' }, { id => 'eeee0002' } ]);
 

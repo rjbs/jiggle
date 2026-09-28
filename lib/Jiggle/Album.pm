@@ -27,6 +27,9 @@ has photos      => (is => 'ro', default  => sub { [] });
 # Only on albums imported from Flickr: the photoset's id.
 has flickr_id   => (is => 'ro');
 
+# When the album was made: a TOML datetime.  Albums are listed newest first.
+has created     => (is => 'ro');
+
 sub from_toml_file ($class, $file) {
   my $data = load_toml_file($file);
   my $self = eval {
@@ -63,6 +66,7 @@ sub as_toml ($self) {
     push @lines, sprintf 'description = %s', _str($desc);
   }
 
+  push @lines, sprintf 'created = %s', $self->created if defined $self->created;
   push @lines, sprintf 'cover = %s', _str($self->cover) if defined $self->cover;
   push @lines, sprintf 'flickr_id = %s', _str($self->flickr_id)
     if defined $self->flickr_id;
