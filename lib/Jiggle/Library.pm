@@ -5,7 +5,9 @@ use Moo;
 
 use Jiggle::Album;
 use Jiggle::Photo;
+use JSON::MaybeXS ();
 use Path::Tiny ();
+use Time::HiRes ();
 use Jiggle::TOML qw( load_toml_file );
 
 =head1 NAME
@@ -89,6 +91,8 @@ order.  The metadata tree is read once and cached.
 
 =cut
 
+my $CACHE_JSON = JSON::MaybeXS->new->canonical->utf8;
+
 has _photo_index => (
   is => 'lazy',
   init_arg  => undef,
@@ -98,19 +102,60 @@ has _photo_index => (
 
     return \%photo unless -d $self->meta_dir;
 
+    # Parsing thousands of TOML files is slow (and reading them is slower,
+    # on slow storage), so the parsed data is cached, and reused for any file
+    # whose size and modification time are what they were.  That costs one
+    # stat per file.  -- claude, 2026-09-28
+    my $cache_file = $self->state_dir->child('meta-cache.json');
+    my $old = eval { $CACHE_JSON->decode($cache_file->slurp_raw)->{files} } // {};
+    my (%new, $misses);
+
     for my $shard ($self->meta_dir->children) {
       next unless $shard->is_dir;
       next if $shard->basename eq 'albums';
 
       for my $file ($shard->children(qr/\.toml\z/)) {
-        my $photo = Jiggle::Photo->from_toml_file($file);
+        my (undef, undef, undef, undef, undef, undef, undef, $size, undef, $mtime)
+          = Time::HiRes::stat("$file");
+
+        my $rel = $file->relative($self->meta_dir)->stringify;
+        my $had = $old->{$rel};
+
+        my $data;
+        if ($had and $had->{size} == $size and $had->{mtime} == $mtime) {
+          $data = $had->{data};
+        } else {
+          $data = load_toml_file($file);
+          $misses++;
+        }
+
+        $new{$rel} = { size => $size, mtime => $mtime, data => $data };
+
+        my $photo = eval { Jiggle::Photo->new({ %$data }) };
+        die "error loading $file: $@" unless $photo;
         $photo{ $photo->id } = $photo;
       }
+    }
+
+    if ($misses or keys %$old != keys %new) {
+      $cache_file->parent->mkpath;
+      $cache_file->spew_raw($CACHE_JSON->encode({ version => 1, files => \%new }));
     }
 
     return \%photo;
   },
 );
+
+
+=method state_dir
+
+This returns the directory where jiggle keeps its own bookkeeping for the
+library, like caches and manifests: F<.jiggle>, at the library's root.
+Everything in it can be deleted, at the cost of a slower next build.
+
+=cut
+
+sub state_dir ($self) { $self->root->child('.jiggle') }
 
 sub photos ($self) { values $self->_photo_index->%* }
 
