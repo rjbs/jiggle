@@ -39,4 +39,21 @@ subtest 'parsed metadata is cached' => sub {
   is(scalar(() = $smaller->photos), 2, 'a removed file is gone');
 };
 
+sub format_ok ($desc, $config, $want) {
+  my (undef, $root) = library_with(config => $config, photos => []);
+  my $library = eval { Jiggle::Library->new({ root => $root }) };
+
+  if (defined $want) {
+    ok($library, "$desc: loads") or return diag $@;
+    is($library->format, $want, "$desc: format $want");
+  } else {
+    ok(! $library, "$desc: refused");
+    like($@, qr/only knows format/, "$desc: ...saying why");
+  }
+}
+
+format_ok('no format given', '', 1);
+format_ok('format 1', "format = 1\n", 1);
+format_ok('a newer format', "format = 2\n", undef);
+
 done_testing;

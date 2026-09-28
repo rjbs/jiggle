@@ -50,6 +50,27 @@ has config => (
   },
 );
 
+=method format
+
+A library's layout and metadata schema have a version, the C<format> in
+F<jiggle.toml>.  A library with no C<format> is from before there was one,
+and is format 1, the same as today's.  jiggle refuses to work on a library
+with a newer format than it knows, rather than misreading it.  When the
+format changes, a migration moves libraries from one to the next.
+
+=cut
+
+our $FORMAT = 1;
+
+sub format ($self) { $self->config->{format} // 1 }
+
+sub BUILD ($self, $) {
+  my $format = $self->format;
+  die "the library at " . $self->root . " is format $format, "
+    . "but this jiggle only knows format $FORMAT; upgrade jiggle\n"
+    if $format > $FORMAT;
+}
+
 sub originals_dir ($self) { $self->root->child('originals') }
 sub meta_dir      ($self) { $self->root->child('meta')      }
 sub derived_dir   ($self) { $self->root->child('derived')   }
