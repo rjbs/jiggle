@@ -4,6 +4,7 @@ use v5.36;
 use App::Cmd::Setup -app;
 
 use Jiggle::Library;
+use POSIX ();
 
 =head1 NAME
 
@@ -31,7 +32,16 @@ sub library ($self) {
     die "$root doesn't look like a jiggle library (no jiggle.toml)\n"
       unless -e "$root/jiggle.toml";
 
-    Jiggle::Library->new({ root => $root });
+    Jiggle::Library->new({ root => $root, logger => $self->logger });
+  };
+}
+
+# Every message gets the time of day, so a long run's log shows where the
+# time went.  Output is unbuffered, so a log being watched is current.
+sub logger ($self) {
+  STDOUT->autoflush(1);
+  return sub ($message) {
+    say POSIX::strftime('[%H:%M:%S] ', localtime) . $message;
   };
 }
 

@@ -6,6 +6,7 @@ use Moo;
 use Jiggle::Album;
 use Jiggle::Photo;
 use JSON::MaybeXS ();
+use Jiggle::Progress;
 use Path::Tiny ();
 use Time::HiRes ();
 use Jiggle::TOML qw( load_toml_file );
@@ -36,6 +37,8 @@ has root => (
   required => 1,
   coerce   => sub ($r) { Path::Tiny::path($r)->absolute },
 );
+
+has logger => (is => 'ro', default => sub { sub { } });
 
 has config => (
   is => 'lazy',
@@ -110,11 +113,18 @@ has _photo_index => (
     my $old = eval { $CACHE_JSON->decode($cache_file->slurp_raw)->{files} } // {};
     my (%new, $misses);
 
+    my $progress = Jiggle::Progress->new({
+      label  => 'reading metadata',
+      total  => scalar keys %$old || undef,
+      logger => $self->logger,
+    });
+
     for my $shard ($self->meta_dir->children) {
       next unless $shard->is_dir;
       next if $shard->basename eq 'albums';
 
       for my $file ($shard->children(qr/\.toml\z/)) {
+        $progress->tick;
         my (undef, undef, undef, undef, undef, undef, undef, $size, undef, $mtime)
           = Time::HiRes::stat("$file");
 
@@ -136,6 +146,10 @@ has _photo_index => (
         $photo{ $photo->id } = $photo;
       }
     }
+
+    $progress->done;
+    $self->logger->(sprintf 'metadata: %d photo(s), %d file(s) reparsed',
+      scalar keys %photo, $misses // 0);
 
     if ($misses or keys %$old != keys %new) {
       $cache_file->parent->mkpath;
