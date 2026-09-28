@@ -301,7 +301,20 @@ photos, tagging them, and adding them to an album.
 
 ## Importing from Flickr
 
-The source is the Net::Flickr::Backup archive:
+`jiggle import-flickr DIR` takes either of two sources and tells them apart
+by their layout.  Both go through ingest, so ids, originals, and file facts
+are exactly as for any other photo, and importing twice adds nothing.
+
+**The primary source is Flickr's own data export** (#2), unpacked with one
+directory per zip under `metadata/` and `photos/`.  It has one clean format,
+album order and covers, coordinates for most photos, three privacy levels
+(anything but public imports as private), and each photo's rotation on
+Flickr.  Its upload times are on a US Pacific clock and are converted to
+instants.  Its rotations mostly repeat what EXIF orientation already calls
+for, so only the difference is kept, as `rotate`: a photo turned by hand on
+Flickr.  It lacks who may see each photo's location.
+
+**The Net::Flickr::Backup archive** is the other source, and a cross-check:
 `YYYY/MM/DD/YYYYMMDD-<flickrid>-<slug>.{jpg,mp4,xml}`, one RDF/XML sidecar
 per photo.  It provides title, description, dates, visibility, license, tags,
 album membership and album titles and descriptions, and the Flickr place
