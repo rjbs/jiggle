@@ -276,9 +276,54 @@ subtest 'the feed' => sub {
     'pages link to it');
 };
 
-subtest 'the feed holds at most 30 entries' => sub {
+subtest 'loose photos are grouped by the day they were taken' => sub {
   my ($site, $dir) = built_site(
-    photos => [ map {; { id => sprintf('jjjj%04d', $_), added => sprintf('2026-09-01T10:%02d:00-04:00', $_) } } 1 .. 31 ],
+    config => qq{base_url = "https://photos.example.com"\n},
+    photos => [
+      # Three from one day, added at different times: one entry, dated by
+      # the latest addition.
+      { id => 'llll0001', title => 'the Deltron show', taken => '2026-01-22T21:00:00',
+        added => '2026-01-23T09:00:00-05:00', tags => [ 'music' ] },
+      { id => 'llll0002', title => 'the Deltron show', taken => '2026-01-22T21:05:00',
+        added => '2026-01-23T09:00:00-05:00' },
+      { id => 'llll0003', title => 'the encore', taken => '2026-01-22T22:30:00',
+        added => '2026-02-01T09:00:00-05:00' },
+      # Another day: an entry of its own, as a single photo.
+      { id => 'llll0004', title => 'the next morning', taken => '2026-01-23T08:00:00',
+        added => '2026-01-24T09:00:00-05:00' },
+      # No taken date: grouped by the day added.
+      { id => 'llll0005', title => 'mystery one', added => '2026-01-25T09:00:00-05:00' },
+      { id => 'llll0006', title => 'mystery two', added => '2026-01-25T10:00:00-05:00' },
+    ],
+  );
+
+  is_deeply(
+    [ feed_entries_of($dir) ],
+    [
+      [ 'tag:photos.example.com,2026:day/taken/2026-01-22', 'the Deltron show, and 2 more' ],
+      [ 'tag:photos.example.com,2026:day/added/2026-01-25', 'mystery one, and 1 more' ],
+      [ '/p/llll0004/', 'the next morning' ],
+    ],
+    'a day of photos is one entry; a day of one photo is that photo',
+  );
+
+  my $xml = $dir->child('feed.xml')->slurp_utf8;
+  like($xml, qr{<published>2026-02-01T09:00:00-05:00</published>}, 'a day is dated by its latest addition');
+  like($xml, qr{3 photos from 22 January 2026}, 'it says how many, and when');
+  like($xml, qr{href="https://photos\.example\.com/2026/01/"}, 'and links to the month');
+  like($xml, qr{<category term="music"/>}, "its photos' tags are its categories");
+};
+
+subtest 'the feed holds at most 30 entries' => sub {
+  # Each taken on a different day, so each is an entry of its own.
+  my ($site, $dir) = built_site(
+    photos => [ map {;
+      {
+        id    => sprintf('jjjj%04d', $_),
+        taken => sprintf('2026-%02d-%02dT10:00:00', 1 + int($_ / 28), 1 + $_ % 28),
+        added => sprintf('2026-09-01T10:%02d:00-04:00', $_),
+      }
+    } 1 .. 31 ],
   );
 
   my @entries = feed_entries_of($dir);

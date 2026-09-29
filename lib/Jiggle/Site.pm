@@ -664,13 +664,17 @@ sub _build_collections ($self) {
 =method feed_entries
 
 This returns the newest 30 entries for the site's feed, newest first.  An
-entry is either a published album, or a public photo that isn't in any
-published album: an album stands for all of its photos.  An album is dated
-by when it was created, and a photo by when it was added to the collection.
-Anything without a date is left out.
+entry is a published album, which stands for all of its photos, or the
+public photos in no published album that were taken on one day.  (Photos
+with no taken date go by the day they were added.)  A day with just one
+such photo is an entry for that photo.
 
-Each entry is a hash: C<kind> ("album" or "photo"), C<when> (a datetime),
-and C<album> or C<photo>.
+An album is dated by when it was created, and a day or a photo by the most
+recent addition to it.  Anything without a date is left out.
+
+Each entry is a hash: C<kind> ("album", "day", or "photo"), C<when> (a
+datetime), and C<album>, C<day>, or C<photo>.  A day is
+C<< { by => "taken" or "added", date => "2026-01-22", photos => [...] } >>.
 
 =cut
 
@@ -688,9 +692,28 @@ sub feed_entries ($self) {
     push @entries, { kind => 'album', when => $when, album => $album } if defined $when;
   }
 
+  # Photos in no album are grouped by the day they were taken, or, if they
+  # have no taken date, the day they were added, so a week of photos makes
+  # a week of entries rather than one per photo.  A day's entry is dated by
+  # the newest addition to it, so the feed stays "what's new".
+  my %day;
   for my $photo (grep {; ! $in_album{ $_->id } } $self->photos->@*) {
-    my $when = $photo->added_at // next;
-    push @entries, { kind => 'photo', when => $when, photo => $photo };
+    my $added = $photo->added_at // next;
+    my ($date) = ($photo->taken // $added) =~ /\A(\d{4}-\d\d-\d\d)/ or next;
+    my $key = defined $photo->taken ? "taken-$date" : "added-$date";
+    push $day{$key}->@*, $photo;
+  }
+
+  for my $key (sort keys %day) {
+    my @photos = sort {; ($a->taken // '') cmp ($b->taken // '') || $a->id cmp $b->id } $day{$key}->@*;
+    my ($when) = sort {; (_instant($b) // 0) <=> (_instant($a) // 0) } map {; $_->added_at } @photos;
+
+    if (@photos == 1) {
+      push @entries, { kind => 'photo', when => $when, photo => $photos[0] };
+    } else {
+      my ($by, $date) = $key =~ /\A(taken|added)-(.*)\z/;
+      push @entries, { kind => 'day', when => $when, day => { by => $by, date => $date, photos => \@photos } };
+    }
   }
 
   my %epoch = map {; $_->{when} => scalar _instant($_->{when}) } @entries;
@@ -753,6 +776,28 @@ sub _feed_album_html ($self, $album) {
   return $html;
 }
 
+sub _feed_day_html ($self, $day, $url) {
+  my @photos = $day->{photos}->@*;
+  my @shown  = List::Util::head(12, @photos);
+
+  my $html = '<p>' . join(' ', map {;
+    my ($tw, $th) = $self->rendition_size($_, 'h480.webp');
+    sprintf '<a href="%s"><img src="%s" height="160" width="%d" alt="%s"></a>',
+      $self->absolute_url($self->photo_url($_)),
+      $self->absolute_url($self->rendition_url($_, 'h480.webp')),
+      int(160 * $tw / $th + 0.5),
+      HTML::Entities::encode_entities($self->display_title($_), q{<>&"'});
+  } @shown) . "</p>\n";
+
+  my ($y, $m, $d) = split /-/, $day->{date};
+  my $date = sprintf '%d %s %d', $d, $self->month_name($m), $y;
+
+  $html .= sprintf qq{<p><a href="%s">%d photos %s %s</a></p>\n},
+    $url, scalar @photos, ($day->{by} eq 'taken' ? 'from' : 'added'), $date;
+
+  return $html;
+}
+
 =method feed_xml
 
 This returns the site's Atom feed, as bytes.  See L</feed_entries>.
@@ -788,10 +833,26 @@ sub feed_xml ($self) {
     my $el = $add->($feed, 'entry');
 
     my ($title, $url, $html, @tags);
+    my $id;
     if ($entry->{kind} eq 'album') {
       my $album = $entry->{album};
       ($title, $url, $html) = ($album->{title}, $self->absolute_url("/albums/$album->{slug}/"),
                                $self->_feed_album_html($album));
+    } elsif ($entry->{kind} eq 'day') {
+      my $day    = $entry->{day};
+      my @photos = $day->{photos}->@*;
+      my ($y, $m) = $day->{date} =~ /\A(\d{4})-(\d\d)/;
+
+      $title = sprintf '%s, and %d more', $self->display_title($photos[0]), @photos - 1;
+      $url   = $self->absolute_url($day->{by} eq 'taken' ? $self->month_url($y, $m) : '/archive/undated/');
+      $html  = $self->_feed_day_html($day, $url);
+      @tags  = do { my %seen; grep {; ! $seen{$_}++ } map {; $_->tags->@* } @photos };
+
+      # Many days share a month page, so the entry's id can't be its URL.  A
+      # tag URI names the day itself, so it stays the same when the day gets
+      # more photos later.
+      my ($host) = $self->base_url =~ m{\A\w+://([^/:]+)};
+      $id = sprintf 'tag:%s,2026:day/%s/%s', $host // 'localhost', $day->{by}, $day->{date};
     } else {
       my $photo = $entry->{photo};
       ($title, $url, $html) = ($self->display_title($photo), $self->absolute_url($self->photo_url($photo)),
@@ -800,7 +861,7 @@ sub feed_xml ($self) {
     }
 
     $add->($el, 'title', $title);
-    $add->($el, 'id', $url);
+    $add->($el, 'id', $id // $url);
     $add->($el, 'link', undef, rel => 'alternate', type => 'text/html', href => $url);
     $add->($el, 'published', $entry->{when});
     $add->($el, 'updated', $entry->{when});
