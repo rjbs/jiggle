@@ -1,0 +1,111 @@
+#!/usr/bin/env perl
+use v5.36;
+
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+
+use Getopt::Long::Descriptive;
+use Jiggle::FlickrLinks;
+use Jiggle::Library;
+use Jiggle::Site;
+use Path::Tiny ();
+
+=head1 NAME
+
+rewrite-flickr-links - point a blog's Flickr links at the jiggle site
+
+=head1 SYNOPSIS
+
+  tools/rewrite-flickr-links --library LIBRARY --blog BLOG           # dry run
+  tools/rewrite-flickr-links --library LIBRARY --blog BLOG --write
+
+=head1 DESCRIPTION
+
+This is a one-time tool, for moving a blog from Flickr to jiggle.  It
+rewrites the Flickr links in every Markdown and HTML file in the blog: see
+L<Jiggle::FlickrLinks> for what becomes what.  Photos and albums are mapped
+by their Flickr ids, using only what the library actually publishes, so no
+rewritten link can go to a page that isn't there.
+
+Without C<--write> it changes nothing, and lists what it would change.
+Either way, it lists what it left alone, and why.  With C<--write>, review
+the result with C<git diff> in the blog.
+
+=cut
+
+my ($opt, $usage) = describe_options(
+  '%c %o',
+  [ 'library=s', 'the jiggle library', { required => 1 } ],
+  [ 'blog=s',    'the blog to rewrite', { required => 1 } ],
+  [ 'write',     'change the files; without this, only report' ],
+  [ 'quiet|q',   "don't list each change, only files and problems" ],
+);
+
+my $library = Jiggle::Library->new({ root => $opt->library });
+my $site    = Jiggle::Site->new({ library => $library });
+
+my %photos = map {; $_->flickr_id ? ($_->flickr_id => $_->id) : () } $site->photos->@*;
+
+my %albums;
+for my $album ($library->albums) {
+  next unless $album->flickr_id;
+  next unless grep {; $_->{slug} eq $album->slug } $site->albums->@*;   # published
+  $albums{ $album->flickr_id } = $album->slug;
+}
+
+say sprintf 'mapping %d published photos and %d published albums', scalar keys %photos,
+  scalar keys %albums;
+
+my $rewriter = Jiggle::FlickrLinks->new({
+  base_url => $site->base_url,
+  photos   => \%photos,
+  albums   => \%albums,
+});
+
+my $blog = Path::Tiny::path($opt->blog);
+my (%skip) = map {; $_ => 1 } qw( _site vendor node_modules .git .jekyll-cache );
+
+my @files;
+my $iter = $blog->iterator({ recurse => 1 });
+while (my $file = $iter->()) {
+  next if grep {; $skip{$_} } split m{/}, $file->relative($blog);
+  next unless $file->is_file and $file =~ /\.(?:md|markdown|html)\z/;
+  push @files, $file;
+}
+
+my ($changed_files, $changes, $problems) = (0, 0, 0);
+
+for my $file (sort @files) {
+  my $text = $file->slurp_utf8;
+  my ($new, $done, $trouble) = $rewriter->rewrite($text);
+  next unless @$done or @$trouble;
+
+  my $rel = $file->relative($blog);
+  say "\n== $rel";
+
+  if (@$done) {
+    $changed_files++;
+    $changes += @$done;
+    say sprintf '  %d change(s)', 0 + @$done;
+    unless ($opt->quiet) {
+      for my $change (@$done) {
+        my ($old, $to) = map {; s/\s+/ /gr } @$change;
+        say "    - $old";
+        say "    + $to";
+      }
+    }
+  }
+
+  for my $problem (@$trouble) {
+    $problems++;
+    my ($what, $why) = @$problem;
+    say sprintf '  left alone: %s', $what =~ s/\s+/ /gr;
+    say "      because: $why";
+  }
+
+  $file->spew_utf8($new) if $opt->write and @$done;
+}
+
+say sprintf "\n%s %d change(s) in %d file(s); %d thing(s) left alone",
+  ($opt->write ? 'made' : 'would make'), $changes, $changed_files, $problems;
+say 'nothing was written; use --write to change the files' unless $opt->write;
