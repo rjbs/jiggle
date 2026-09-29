@@ -63,6 +63,8 @@ round_trips_ok('local datetime', taken => '2026-07-17T17:23:17');
 
 round_trips_ok('extra rotation', rotate => 90);
 
+round_trips_ok('when it was added', added => '2026-09-29T08:15:00-04:00');
+
 round_trips_ok('source mtime', original => {
   file => 'IMG_9971.JPG', ext => 'jpg', sha256 => 'f' x 64,
   bytes => 1000, width => 4000, height => 3000,

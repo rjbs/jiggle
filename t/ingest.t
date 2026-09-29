@@ -81,6 +81,15 @@ subtest "the source file's mtime is recorded" => sub {
   is(epoch_of($recorded), $epoch, '...naming the same instant');
 };
 
+subtest "when it was added is recorded" => sub {
+  my $before = time;
+  my ($photo) = Jiggle::Ingest->new({ library => new_library() })->ingest_files(new_jpeg());
+  my $added = epoch_of($photo->added);
+
+  ok($added >= $before - 1 && $added <= time + 1, 'added is the time of ingest');
+  is($photo->added_at, $photo->added, '...and is what added_at gives');
+};
+
 subtest 'an id collision is fatal' => sub {
   my $library = new_library();
   ingest_ok('ingest one file', $library, [ $a ], [ id_of($a) ]);

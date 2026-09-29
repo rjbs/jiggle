@@ -323,6 +323,7 @@ sub _photo_attributes ($self, $meta, $facts) {
     flickr_id   => $meta->{flickr_id},
     (defined $taken             ? (taken           => $taken)             : ()),
     (defined $meta->{uploaded}  ? (flickr_uploaded => $meta->{uploaded})  : ()),
+    (defined $meta->{uploaded}  ? (added           => $meta->{uploaded})  : ()),
     ($location                  ? (location        => $location)          : ()),
   };
 }

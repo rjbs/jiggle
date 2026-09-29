@@ -53,6 +53,21 @@ has flickr_id => (is => 'ro');
 # imported photos have one.  It's provenance, and a last-resort date.
 has flickr_uploaded => (is => 'ro');
 
+# When the photo was added to the collection: a TOML datetime, with offset.
+# Ingest sets it, and imports set it to the Flickr upload time.  It's what
+# the feed sorts by.
+has added => (is => 'ro');
+
+=method added_at
+
+This returns when the photo joined the collection: C<added>, or, for photos
+imported before there was such a thing, C<flickr_uploaded>, which means the
+same.  It may be undef.
+
+=cut
+
+sub added_at ($self) { $self->added // $self->flickr_uploaded }
+
 # { file, ext, sha256, bytes, width, height }, plus duration (in seconds) for
 # a video, and source_mtime: the modification time of the file ingest copied
 # from, as a TOML datetime with the ingesting machine's UTC offset.  Nothing
@@ -143,6 +158,7 @@ sub as_toml ($self) {
   push @lines, sprintf 'rotate = %d', $self->rotate if $self->rotate;
   push @lines, sprintf 'flickr_id = %s', _str($self->flickr_id)
     if defined $self->flickr_id;
+  push @lines, sprintf 'added = %s', $self->added if defined $self->added;
   push @lines, sprintf 'flickr_uploaded = %s', $self->flickr_uploaded
     if defined $self->flickr_uploaded;
 

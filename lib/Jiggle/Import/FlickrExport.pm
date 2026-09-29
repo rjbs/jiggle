@@ -214,6 +214,7 @@ sub _photo_attributes ($self, $record, $facts) {
     rotate      => $rotate,
     _defined(taken           => $self->taken_from($taken, $facts)),
     _defined(flickr_uploaded => _pacific_to_instant($record->{date_imported})),
+    _defined(added           => _pacific_to_instant($record->{date_imported})),
     _defined(location        => $location),
   };
 }

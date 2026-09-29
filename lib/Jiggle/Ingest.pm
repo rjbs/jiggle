@@ -137,6 +137,7 @@ sub ingest_file ($self, $path, $arg = {}) {
   my $photo = Jiggle::Photo->new({
     type  => $kind,
     taken => $facts->{taken},
+    added => _datetime_with_offset(time),    # an importer may say otherwise
     ($facts->{location} ? (location => $facts->{location}) : ()),
     %$extra,
     id    => $id,

@@ -117,6 +117,8 @@ subtest 'photo metadata' => sub {
   is(epoch_of($photos->{2173311823}->flickr_uploaded),
      Time::Local::timegm(6, 12, 23, 4, 6, 2008),
      'upload time was Pacific time');
+  is($photos->{2173311823}->added, $photos->{2173311823}->flickr_uploaded,
+    'added is the upload time');
 
   photo_is('friends and family is private', $photos, 3001, visibility => 'private');
   photo_is('an untitled photo is found by its id', $photos, 18099963404, title => '');
