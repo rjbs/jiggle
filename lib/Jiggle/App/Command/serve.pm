@@ -38,8 +38,12 @@ sub execute ($self, $opt, $args) {
     $c->res->headers->cache_control('no-cache');
   });
 
+  # The site's own 404 page, as the real web server will serve it.
+  my $not_found = $root->child('404.html');
   $app->routes->any('/*whatever' => { whatever => '' } => sub ($c) {
-    $c->render(text => 'not found', status => 404);
+    return $c->render(text => 'not found', status => 404) unless -e $not_found;
+    $c->res->headers->content_type('text/html; charset=utf-8');
+    $c->render(data => $not_found->slurp_raw, status => 404);
   });
 
   my $url = "http://127.0.0.1:" . $opt->port;
