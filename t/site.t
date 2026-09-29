@@ -4,6 +4,7 @@ use Test::More;
 
 use lib 'lib', 't/lib';
 
+use JSON::MaybeXS ();
 use Jiggle::Photo;
 use Jiggle::Site;
 use Jiggle::TestLibrary;
@@ -180,6 +181,47 @@ subtest 'rebuilding changes nothing, and pruning removes the stale' => sub {
   $dir->child('p/zzzz0001/index.html')->touchpath;
   Jiggle::Site->new({ library => $library, verify => 1 })->build;
   ok(! -e $dir->child('p/zzzz0001'), 'with verify, a stray file is pruned');
+};
+
+sub embed_of ($dir, $id) {
+  my $file = $dir->child('p', $id, 'embed.json');
+  return -e $file ? JSON::MaybeXS::decode_json($file->slurp_raw) : undef;
+}
+
+subtest 'embed data for other sites' => sub {
+  my ($site, $dir) = built_site(
+    config => qq{base_url = "https://photos.example.com"\n},
+    photos => [
+      { id => 'hhhh0001', title => 'red and blue switches', taken => '2025-07-04T14:21:25',
+        location => { lat => 40.62, lon => -75.37 } },
+      { id => 'hhhh0002', taken => '2025-07-05T09:00:00' },
+      { id => 'hhhh0003', type => 'video', title => 'a clip',
+        original => { file => 'c.mov', ext => 'mov', sha256 => 'f' x 64, bytes => 1,
+                      width => 1080, height => 1920, duration => 7 } },
+      { id => 'hhhh0004', title => 'secret', visibility => 'private' },
+    ],
+  );
+
+  my $embed = embed_of($dir, 'hhhh0001');
+  is($embed->{format}, 1, 'versioned');
+  is($embed->{title}, 'red and blue switches', 'title');
+  is($embed->{alt},   'red and blue switches', 'alt text is the title');
+  is($embed->{url},   'https://photos.example.com/p/hhhh0001/', 'absolute page URL');
+  is_deeply($embed->{renditions}{'1024.webp'},
+    { url => 'https://photos.example.com/p/hhhh0001/1024.webp', width => 1024, height => 768 },
+    'a rendition, with its size');
+  is($embed->{video}, undef, 'a photo has no video');
+  unlike($dir->child('p/hhhh0001/embed.json')->slurp_raw, qr/40\.62|-75\.37/, 'no location');
+
+  is(embed_of($dir, 'hhhh0002')->{alt}, '5 July 2025, 09:00', 'untitled: alt is the date');
+
+  my $video = embed_of($dir, 'hhhh0003');
+  is($video->{type}, 'video', 'a video says so');
+  is_deeply($video->{video},
+    { url => 'https://photos.example.com/p/hhhh0003/video.mp4', width => 1080, height => 1920 },
+    '...and has its video');
+
+  is(embed_of($dir, 'hhhh0004'), undef, 'a private photo has no embed data');
 };
 
 subtest 'a base URL with a trailing slash' => sub {

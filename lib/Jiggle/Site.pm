@@ -573,9 +573,50 @@ sub _build_photo_pages ($self, $photos) {
       $w->link_file("p/$id/$recipe->{name}", $source,
         $self->derive->rendition_key($photo, $recipe->{name}) // '');
     }
+
+    $w->write_file("p/$id/embed.json", $JSON->encode($self->embed_data($photo)));
   }
 
   return;
+}
+
+=method embed_data
+
+  my $data = $site->embed_data($photo);
+
+This returns what another site needs to embed the photo, which is published
+as F</p/ID/embed.json>: its title, its page's URL, its type, and the URL and
+size of each rendition useful for embedding (and, for a video, of the
+video).  URLs are absolute.  It includes no location, and only public photos
+are published at all, so a private or unknown id is simply a 404.
+
+C<format> is the version of this structure, for the blog plugin to check.
+
+=cut
+
+sub embed_data ($self, $photo) {
+  my $rendition = sub ($name) {
+    my ($w, $h) = $self->rendition_size($photo, $name);
+    return {
+      url    => $self->absolute_url($self->rendition_url($photo, $name)),
+      width  => $w,
+      height => $h,
+    };
+  };
+
+  return {
+    format => 1,
+    id     => $photo->id,
+    type   => $photo->type,
+    title  => $photo->title,
+    alt    => $self->display_title($photo),
+    taken  => $photo->taken,
+    url    => $self->absolute_url($self->photo_url($photo)),
+    width  => $photo->width,
+    height => $photo->height,
+    renditions => { map {; $_ => $rendition->($_) } qw( 500.webp 1024.webp 2048.webp ) },
+    video  => ($photo->is_video ? $rendition->('video.mp4') : undef),
+  };
 }
 
 sub _build_collections ($self) {
