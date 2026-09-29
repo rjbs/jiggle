@@ -25,6 +25,7 @@ sub description {
 sub opt_spec {
   return (
     [ 'no-derive', "don't make renditions for the imported photos yet" ],
+    [ 'force',     'import even into a library whose meta/ has git commits' ],
   );
 }
 
@@ -33,7 +34,28 @@ sub validate_args ($self, $opt, $args) {
   $self->usage_error("$args->[0] isn't a directory") unless -d $args->[0];
 }
 
+# Once meta/ is committed, it's the source of truth, and may have been edited
+# by hand.  Importing again skips photos already present, but rewrites every
+# album from Flickr's data (title, description, order, cover), which would
+# undo those edits.  -- claude, 2026-09-28
+sub _meta_is_committed ($self) {
+  my $meta = $self->library->meta_dir;
+  return 0 unless -e $meta->child('.git');
+
+  # \Q quotes the path for the shell; library paths may well have spaces.
+  qx{git -C \Q$meta\E rev-parse --quiet --verify HEAD 2>&1};
+  return $? == 0;
+}
+
 sub execute ($self, $opt, $args) {
+  if (! $opt->force and $self->_meta_is_committed) {
+    die <<~'END';
+    This library's meta/ has git commits, so it may have been edited by hand,
+    and importing again would overwrite every album from Flickr's data.  If
+    that's what you want, use --force, and review the result with git diff.
+    END
+  }
+
   my $class = Jiggle::Import::FlickrExport->looks_like_export($args->[0])
             ? 'Jiggle::Import::FlickrExport'
             : 'Jiggle::Import::FlickrBackup';
