@@ -5,9 +5,11 @@ use Moo;
 
 use Jiggle::Markdown ();
 use Encode ();
+use HTML::Entities ();
 use JSON::MaybeXS ();
 use Jiggle::Progress;
 use List::Util ();
+use XML::LibXML ();
 use Time::HiRes ();
 use Time::Local ();
 use Jiggle::Derive;
@@ -133,7 +135,9 @@ sub _instant ($datetime) {
     =~ /\A(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d+)?(Z|[-+]\d\d:\d\d)?\z/
     or return;
 
-  my $epoch = Time::Local::timegm($s, $mi, $h, $d, $mo - 1, $y);
+  # timegm dies on an impossible date (a typo, say, in hand-edited
+  # metadata); that makes the date unusable, not the build.
+  my $epoch = eval { Time::Local::timegm($s, $mi, $h, $d, $mo - 1, $y) } // return;
   if ($zone and $zone =~ /\A([-+])(\d\d):(\d\d)\z/) {
     $epoch -= ($1 eq '-' ? -1 : 1) * ($2 * 3600 + $3 * 60);
   }
@@ -502,6 +506,7 @@ sub build ($self) {
     $w->write_file('map/photos.geojson', $JSON->encode($self->_geojson));
     $self->_write_page('search/index.html', 'search', { title => 'Search' });
     $self->_write_page('404.html', '404', { title => 'Not found' });
+    $w->write_file('feed.xml', $self->feed_xml);
     $self->_copy_static;
   });
 
@@ -645,6 +650,156 @@ sub _build_collections ($self) {
   }
 
   return;
+}
+
+=method feed_entries
+
+This returns the newest 30 entries for the site's feed, newest first.  An
+entry is either a published album, or a public photo that isn't in any
+published album: an album stands for all of its photos.  An album is dated
+by when it was created, and a photo by when it was added to the collection.
+Anything without a date is left out.
+
+Each entry is a hash: C<kind> ("album" or "photo"), C<when> (a datetime),
+and C<album> or C<photo>.
+
+=cut
+
+my $FEED_SIZE = 30;
+
+sub feed_entries ($self) {
+  my %in_album = map {; my $a = $_; map {; $_->id => 1 } $a->{photos}->@* } $self->albums->@*;
+
+  my @entries;
+
+  for my $album ($self->albums->@*) {
+    # An album with no creation date is dated by its newest photo.
+    my $when = $album->{created}
+            // (List::Util::maxstr(grep {; defined } map {; $_->added_at } $album->{photos}->@*));
+    push @entries, { kind => 'album', when => $when, album => $album } if defined $when;
+  }
+
+  for my $photo (grep {; ! $in_album{ $_->id } } $self->photos->@*) {
+    my $when = $photo->added_at // next;
+    push @entries, { kind => 'photo', when => $when, photo => $photo };
+  }
+
+  my %epoch = map {; $_->{when} => scalar _instant($_->{when}) } @entries;
+  @entries = grep {; defined $epoch{ $_->{when} } } @entries;
+
+  @entries = sort {;
+       $epoch{ $b->{when} } <=> $epoch{ $a->{when} }
+    || $a->{kind} cmp $b->{kind}
+  } @entries;
+
+  return [ List::Util::head($FEED_SIZE, @entries) ];
+}
+
+sub _feed_photo_html ($self, $photo) {
+  my ($w, $h) = $self->rendition_size($photo, '1024.webp');
+  my $url     = $self->absolute_url($self->photo_url($photo));
+  my $alt     = HTML::Entities::encode_entities($self->display_title($photo), q{<>&"'});
+
+  my $html = sprintf qq{<p><a href="%s"><img src="%s" width="%d" height="%d" alt="%s"></a></p>\n},
+    $url, $self->absolute_url($self->rendition_url($photo, '1024.webp')), $w, $h, $alt;
+
+  $html .= qq{<p><a href="$url">Play the video</a></p>\n} if $photo->is_video;
+  $html .= $self->description_html($photo->description);
+
+  if (my @tags = $photo->tags->@*) {
+    $html .= "<p>Tags: " . join(', ', map {;
+      sprintf '<a href="%s">%s</a>',
+        $self->absolute_url('/tags/' . $self->tag_slug($_) . '/'),
+        HTML::Entities::encode_entities($_, q{<>&"'})
+    } @tags) . "</p>\n";
+  }
+
+  return $html;
+}
+
+sub _feed_album_html ($self, $album) {
+  my $url   = $self->absolute_url("/albums/$album->{slug}/");
+  my $cover = $album->{cover};
+  my ($w, $h) = $self->rendition_size($cover, '1024.webp');
+
+  my $html = sprintf qq{<p><a href="%s"><img src="%s" width="%d" height="%d" alt=""></a></p>\n},
+    $url, $self->absolute_url($self->rendition_url($cover, '1024.webp')), $w, $h;
+
+  $html .= $self->description_html($album->{description});
+
+  my @more = grep {; $_->id ne $cover->id } $self->sample(8, $album->{photos}->@*);
+  if (@more) {
+    $html .= '<p>' . join(' ', map {;
+      my ($tw, $th) = $self->rendition_size($_, 'h480.webp');
+      sprintf '<a href="%s"><img src="%s" height="120" width="%d" alt="%s"></a>',
+        $self->absolute_url($self->photo_url($_)),
+        $self->absolute_url($self->rendition_url($_, 'h480.webp')),
+        int(120 * $tw / $th + 0.5),
+        HTML::Entities::encode_entities($self->display_title($_), q{<>&"'});
+    } @more) . "</p>\n";
+  }
+
+  my $n = $album->{photos}->@*;
+  $html .= sprintf qq{<p><a href="%s">%d photo%s</a></p>\n}, $url, $n, $n == 1 ? '' : 's';
+  return $html;
+}
+
+=method feed_xml
+
+This returns the site's Atom feed, as bytes.  See L</feed_entries>.
+
+=cut
+
+sub feed_xml ($self) {
+  my $ATOM = 'http://www.w3.org/2005/Atom';
+  my $doc  = XML::LibXML::Document->new('1.0', 'UTF-8');
+  my $feed = $doc->createElementNS($ATOM, 'feed');
+  $doc->setDocumentElement($feed);
+
+  my $add = sub ($parent, $name, $text = undef, %attr) {
+    my $el = $doc->createElementNS($ATOM, $name);
+    $el->setAttribute($_ => $attr{$_}) for sort keys %attr;
+    $el->appendText($text) if defined $text;
+    $parent->appendChild($el);
+    return $el;
+  };
+
+  my $entries = $self->feed_entries;
+  my $home    = $self->absolute_url('/');
+
+  $add->($feed, 'title', $self->site_title);
+  $add->($feed, 'id', $home);
+  $add->($feed, 'link', undef, rel => 'alternate', type => 'text/html', href => $home);
+  $add->($feed, 'link', undef, rel => 'self', type => 'application/atom+xml',
+    href => $self->absolute_url('/feed.xml'));
+  $add->($feed, 'updated', @$entries ? $entries->[0]{when} : '1970-01-01T00:00:00Z');
+  $add->($add->($feed, 'author'), 'name', $self->config->{author} // $self->site_title);
+
+  for my $entry (@$entries) {
+    my $el = $add->($feed, 'entry');
+
+    my ($title, $url, $html, @tags);
+    if ($entry->{kind} eq 'album') {
+      my $album = $entry->{album};
+      ($title, $url, $html) = ($album->{title}, $self->absolute_url("/albums/$album->{slug}/"),
+                               $self->_feed_album_html($album));
+    } else {
+      my $photo = $entry->{photo};
+      ($title, $url, $html) = ($self->display_title($photo), $self->absolute_url($self->photo_url($photo)),
+                               $self->_feed_photo_html($photo));
+      @tags = $photo->tags->@*;
+    }
+
+    $add->($el, 'title', $title);
+    $add->($el, 'id', $url);
+    $add->($el, 'link', undef, rel => 'alternate', type => 'text/html', href => $url);
+    $add->($el, 'published', $entry->{when});
+    $add->($el, 'updated', $entry->{when});
+    $add->($el, 'category', undef, term => $_) for @tags;
+    $add->($el, 'content', "$html", type => 'html');
+  }
+
+  return $doc->toString(1);
 }
 
 sub _build_archive ($self) {

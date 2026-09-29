@@ -5,6 +5,8 @@ use Test::More;
 use lib 'lib', 't/lib';
 
 use JSON::MaybeXS ();
+use XML::LibXML;
+use XML::LibXML::XPathContext;
 use Jiggle::Photo;
 use Jiggle::Site;
 use Jiggle::TestLibrary;
@@ -222,6 +224,78 @@ subtest 'embed data for other sites' => sub {
     '...and has its video');
 
   is(embed_of($dir, 'hhhh0004'), undef, 'a private photo has no embed data');
+};
+
+# The feed's entries, as [ kind-and-id, title ] in feed order.
+sub feed_entries_of ($dir) {
+  my $doc = XML::LibXML->load_xml(location => $dir->child('feed.xml') . '');
+  my $xpc = XML::LibXML::XPathContext->new($doc);
+  $xpc->registerNs(a => 'http://www.w3.org/2005/Atom');
+  return map {;
+    [ $xpc->findvalue('a:id', $_) =~ s{\Ahttps://photos\.example\.com}{}r, $xpc->findvalue('a:title', $_) ]
+  } $xpc->findnodes('/a:feed/a:entry');
+}
+
+subtest 'the feed' => sub {
+  my ($site, $dir) = built_site(
+    config => qq{base_url = "https://photos.example.com"\n},
+    photos => [
+      # In an album, so represented by it.
+      { id => 'iiii0001', title => 'in the album', added => '2026-09-01T10:00:00-04:00' },
+      # On its own, newer than the album.
+      { id => 'iiii0002', title => 'loose, new', added => '2026-09-20T10:00:00-04:00',
+        tags => [ 'high-st' ], location => { lat => 40.62, lon => -75.37 } },
+      # On its own, older, dated only by its Flickr upload.
+      { id => 'iiii0003', title => 'loose, old', flickr_uploaded => '2008-01-06T21:32:33-05:00' },
+      # Undated, so left out.
+      { id => 'iiii0004', title => 'undated' },
+      # Private, so left out.
+      { id => 'iiii0005', title => 'secret', added => '2026-09-25T10:00:00-04:00', visibility => 'private' },
+    ],
+    albums => [
+      { slug => 'trip', title => 'The Trip', photos => [ 'iiii0001' ], created => '2026-09-02T10:00:00-04:00' },
+    ],
+  );
+
+  is_deeply(
+    [ feed_entries_of($dir) ],
+    [
+      [ '/p/iiii0002/', 'loose, new' ],
+      [ '/albums/trip/', 'The Trip' ],
+      [ '/p/iiii0003/', 'loose, old' ],
+    ],
+    'albums and loose photos, newest first; album members, undated, and private left out',
+  );
+
+  my $xml = $dir->child('feed.xml')->slurp_utf8;
+  like($xml, qr{<category term="high-st"/>}, 'tags are categories');
+  like($xml, qr{https://photos\.example\.com/p/iiii0002/1024\.webp}, 'a photo entry shows the photo');
+  unlike($xml, qr/secret|iiii0005/, 'nothing of the private photo');
+  unlike($xml, qr/40\.62|-75\.37/, 'no location');
+  like($dir->child('index.html')->slurp_utf8, qr{<link rel="alternate" type="application/atom\+xml" href="/feed\.xml"},
+    'pages link to it');
+};
+
+subtest 'the feed holds at most 30 entries' => sub {
+  my ($site, $dir) = built_site(
+    photos => [ map {; { id => sprintf('jjjj%04d', $_), added => sprintf('2026-09-01T10:%02d:00-04:00', $_) } } 1 .. 31 ],
+  );
+
+  my @entries = feed_entries_of($dir);
+  is(scalar @entries, 30, 'thirty entries');
+  is($entries[0][0], '/p/jjjj0031/', 'the newest first');
+  is($entries[-1][0], '/p/jjjj0002/', 'the oldest dropped');
+};
+
+subtest 'an impossible date leaves only that item undated' => sub {
+  my ($site, $dir) = built_site(
+    photos => [
+      { id => 'kkkk0001', added => '2026-09-31T10:00:00-04:00' },   # no 31 September
+      { id => 'kkkk0002', added => '2026-09-30T10:00:00-04:00' },
+    ],
+  );
+
+  is_deeply([ map {; $_->[0] } feed_entries_of($dir) ], [ '/p/kkkk0002/' ], 'the build goes on');
 };
 
 subtest 'a base URL with a trailing slash' => sub {
