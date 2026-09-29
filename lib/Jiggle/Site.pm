@@ -201,7 +201,7 @@ has albums => (
 
     # Newest first; albums with no creation date go last, by title.  The
     # dates may carry different offsets, so compare them as instants.
-    my %when = map {; $_->{slug} => _instant($_->{created}) } @albums;
+    my %when = map {; $_->{slug} => scalar _instant($_->{created}) } @albums;
     return [
       sort {;
            (defined $when{ $b->{slug} } <=> defined $when{ $a->{slug} })
@@ -501,6 +501,7 @@ sub build ($self) {
     $self->_write_page('map/index.html', 'map', { title => 'Map' });
     $w->write_file('map/photos.geojson', $JSON->encode($self->_geojson));
     $self->_write_page('search/index.html', 'search', { title => 'Search' });
+    $self->_write_page('404.html', '404', { title => 'Not found' });
     $self->_copy_static;
   });
 
