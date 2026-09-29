@@ -1,0 +1,93 @@
+#!/usr/bin/env perl
+use v5.36;
+
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+
+use Getopt::Long::Descriptive;
+use JSON::MaybeXS ();
+use Jiggle::Library;
+use Path::Tiny ();
+
+=head1 NAME
+
+fix-album-covers - set album covers from Flickr's own list of albums
+
+=head1 SYNOPSIS
+
+  curl -s "https://api.flickr.com/services/rest/?method=flickr.photosets.getList&api_key=KEY&user_id=NSID&per_page=500&format=json&nojsoncallback=1" > sets.json
+  tools/fix-album-covers --library LIBRARY --sets sets.json          # dry run
+  tools/fix-album-covers --library LIBRARY --sets sets.json --write
+
+=head1 DESCRIPTION
+
+Flickr's data export gives some albums' cover as "photo 0", which doesn't
+exist, so the import fell back to each such album's first photo.  Flickr's
+API, though, gives each album's real cover (its C<primary>).  This compares
+every imported album's cover with that, and fixes those that differ, by
+changing just the C<cover> line of the album's file.
+
+Without C<--write> it changes nothing and reports.  Review the result with
+C<git diff> in F<meta/>.
+
+=cut
+
+my ($opt, $usage) = describe_options(
+  '%c %o',
+  [ 'library=s', 'the jiggle library', { required => 1 } ],
+  [ 'sets=s',    "the output of flickr.photosets.getList, as JSON", { required => 1 } ],
+  [ 'write',     'change the files; without this, only report' ],
+);
+
+my $library = Jiggle::Library->new({ root => $opt->library });
+
+my $sets = JSON::MaybeXS::decode_json(Path::Tiny::path($opt->sets)->slurp_raw);
+die "the sets file isn't a successful API response\n" unless ($sets->{stat} // '') eq 'ok';
+my %primary = map {; $_->{id} => $_->{primary} } $sets->{photosets}{photoset}->@*;
+
+my %jiggle_id = map {; $_->flickr_id ? ($_->flickr_id => $_->id) : () } $library->photos;
+
+my ($fixed, $right, @missing);
+
+for my $album (sort { $a->slug cmp $b->slug } $library->albums) {
+  my $set = $album->flickr_id // next;
+
+  unless (exists $primary{$set}) {
+    push @missing, $album;
+    next;
+  }
+
+  my $want = $jiggle_id{ $primary{$set} };
+  unless ($want) {
+    say sprintf '%-50s cover is Flickr photo %s, which isn\'t in the library',
+      $album->slug, $primary{$set};
+    next;
+  }
+
+  unless (grep {; $_ eq $want } $album->photos->@*) {
+    say sprintf '%-50s cover %s isn\'t one of the album\'s photos; left alone', $album->slug, $want;
+    next;
+  }
+
+  if (($album->cover // '') eq $want) {
+    $right++;
+    next;
+  }
+
+  say sprintf '%-50s cover %s -> %s', $album->slug, $album->cover // '(none)', $want;
+  $fixed++;
+
+  next unless $opt->write;
+
+  my $file = $library->albums_dir->child($album->slug . '.toml');
+  my $toml = $file->slurp_utf8;
+  $toml =~ s/^cover = "[^"]*"$/cover = "$want"/m
+    or $toml =~ s/^(title = .*\n)/$1cover = "$want"\n/m
+    or die "can't find where to put the cover in $file\n";
+  $file->spew_utf8($toml);
+}
+
+say sprintf "\n%s %d cover(s); %d already right", ($opt->write ? 'fixed' : 'would fix'), $fixed // 0, $right // 0;
+say sprintf '%d album(s) not in the sets file (private on Flickr, or made here): %s',
+  scalar @missing, join ', ', map {; $_->slug } @missing if @missing;
+say 'nothing was written; use --write to change the files' unless $opt->write;
