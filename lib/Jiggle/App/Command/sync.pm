@@ -43,12 +43,20 @@ sub execute ($self, $opt, $args) {
   die "the last build didn't finish, so site/ may be half updated; build again first\n"
     if -e $marker;
 
+  my $rsync = $publish->{rsync} // 'rsync';
+
+  # macOS's own rsync is openrsync, which has only the basic options.  With
+  # rsync 3, deletions wait until the new files are in place, so the live
+  # site never links to pages already gone, and progress is one line and a
+  # summary rather than a list of every file.
+  my $modern = `$rsync --version 2>/dev/null` =~ /\Arsync\s+version\s+3\./m;
+
   my @cmd = (
-    $publish->{rsync} // 'rsync',
+    $rsync,
     '--recursive', '--links', '--times', '--compress',
-    '--delete',
-    '--verbose',
-    ($opt->dry_run ? '--dry-run' : ()),
+    ($modern ? ('--delete-delay', '--info=progress2,stats1', '--human-readable')
+             : ('--delete', '--verbose')),
+    ($opt->dry_run ? ('--dry-run', ($modern ? '--itemize-changes' : ())) : ()),
     "$site/",
     $target,
   );
