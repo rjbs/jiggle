@@ -78,6 +78,7 @@ taken = 2008-01-06T19:36:11       # TOML datetime; an offset only if known
 tags = ["high-st"]                # as typed; normalized only for URLs
 visibility = "public"             # or "private": kept, never published
 rotate = 90                       # extra clockwise turn; usually absent
+added = 2008-01-06T21:32:33-05:00   # when it joined the collection
 flickr_id = "2173311823"          # imported photos only
 flickr_uploaded = 2008-01-06T21:32:33-05:00
 
@@ -99,6 +100,9 @@ private = true                    # never publish this location
 
 - `taken` is a wall-clock time.  It has an offset when the file's EXIF gives
   one; Flickr's dates don't carry a real one, so imported dates usually don't.
+- `added` is when the photo joined the collection: set at ingest, or to the
+  Flickr upload time on import.  Photos imported before it existed have only
+  `flickr_uploaded`, which means the same.  The feed sorts by it.
 - `rotate` is a turn beyond what the file's EXIF orientation calls for, like a
   photo rotated by hand on Flickr.  Changing it remakes that photo's
   renditions.
@@ -162,7 +166,7 @@ zones or with private locations, and every published location is rounded.
     /albums/<slug>/
     /tags/<tag slug>/
     /<year>/  /<year>/<month>/  /archive/
-    /map/  /search/
+    /map/  /search/  /feed.xml
 
 ## `.jiggle/`
 
