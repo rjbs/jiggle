@@ -510,24 +510,33 @@ sub build ($self) {
     $self->_copy_static;
   });
 
-  if (my $search = $self->search) {
-    # Pagefind indexes whatever HTML is in the output, so stale pages (like
-    # one for a photo just made private) must be pruned before it runs.  The
-    # old index is kept until the new one is written, so unchanged index
-    # files are left alone.  -- claude, 2026-09-27
-    $self->_phase('search index', sub {
-      $w->prune({ except => 'pagefind/' });
+  # Pagefind indexes whatever HTML is in the output, so stale pages (like
+  # one for a photo just made private) must be pruned before it runs.  The
+  # old index is kept until the new one is written, so unchanged index files
+  # are left alone.  -- claude, 2026-09-27
+  $self->_phase('search index', sub {
+    $w->prune({ except => 'pagefind/' });
 
-      # The index is made from the pages, so if none was written or removed,
-      # the old index is still right, and Pagefind (which reads every page)
-      # needn't run.  keep finds nothing to keep without a manifest.
-      if (! $w->html_changes and my $kept = $w->keep('pagefind/')) {
-        $self->logger->("search index: no page changed; kept $kept file(s)");
-      } else {
-        $search->index_site($self->out_dir, $w);
-      }
-    });
-  }
+    # The index is made from the pages, so if none was written or removed,
+    # the old index is still right, and Pagefind (which reads every page)
+    # needn't run.  keep finds nothing to keep without a manifest.
+    if (! $w->html_changes and my $kept = $w->keep('pagefind/')) {
+      $self->logger->("search index: no page changed; kept $kept file(s)");
+      return;
+    }
+
+    if (my $search = $self->search) {
+      $search->index_site($self->out_dir, $w);
+      return;
+    }
+
+    # Without search, a stale index can't be kept: it might still hold the
+    # text of a photo made private since.  It's pruned, which leaves the
+    # site with no search until it's built again with search.
+    # -- claude, 2026-09-29
+    $self->logger->('search index: pages changed, and search is off, so the old index '
+      . 'is removed; build with search before syncing');
+  });
 
   $self->_phase('pruning', sub { $w->prune; $w->save_manifest });
 

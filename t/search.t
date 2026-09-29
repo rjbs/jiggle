@@ -114,4 +114,23 @@ subtest 'Pagefind runs only when a page changed' => sub {
   like(indexed($dir)->{'/p/dddd0001/'}, qr/After/, '...and the index has the new title');
 };
 
+subtest 'building without search' => sub {
+  my (undef, $dir, $library) = built_site(
+    photos => [ { id => 'eeee0001', title => 'Before' } ],
+    site   => { search => $search },
+  );
+
+  my $build = sub {
+    Jiggle::Site->new({ library => Jiggle::Library->new({ root => $library->root }) })->build;
+  };
+
+  $build->();
+  indexed_urls_are('no page changed: the index is kept', $dir, [ '/p/eeee0001/' ]);
+
+  my $meta = $library->meta_path('eeee0001');
+  $meta->spew_utf8($meta->slurp_utf8 =~ s/^visibility = "public"/visibility = "private"/mr);
+  $build->();
+  ok(! -e $dir->child('pagefind'), 'pages changed: the stale index is removed, not kept');
+};
+
 done_testing;
