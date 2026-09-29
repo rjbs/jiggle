@@ -394,6 +394,22 @@ sub description_text ($self, $text) {
   Jiggle::Markdown::markdown_to_text($text);
 }
 
+=method attr_text
+
+  <link title="<%== $site->attr_text($title) %>">
+
+This escapes text for a double-quoted HTML attribute, escaping only what
+has to be: C<&>, C<< < >>, C<< > >>, and C<">.  Templates escape apostrophes
+too, which is correct, but some programs read attributes without decoding
+entities: Feedbin, finding the feed through its discovery link, named it
+"rjbs&#39;s photos".
+
+=cut
+
+sub attr_text ($self, $text) {
+  HTML::Entities::encode_entities($text // '', q{<>&"});
+}
+
 sub excerpt ($self, $text, $max = 200) {
   $text //= '';
   $text =~ s/\s+/ /g;

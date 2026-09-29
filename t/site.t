@@ -314,6 +314,13 @@ subtest 'loose photos are grouped by the day they were taken' => sub {
   like($xml, qr{<category term="music"/>}, "its photos' tags are its categories");
 };
 
+subtest "the feed's discovery link names the site plainly" => sub {
+  my ($site, $dir) = built_site(config => qq{title = "rjbs's <photos> & \\"more\\""\n}, photos => []);
+  like($dir->child('index.html')->slurp_utf8,
+    qr{href="/feed\.xml" title="rjbs's &lt;photos&gt; &amp; &quot;more&quot;"},
+    'the apostrophe is left alone; the rest is escaped');
+};
+
 subtest 'the feed holds at most 30 entries' => sub {
   # Each taken on a different day, so each is an entry of its own.
   my ($site, $dir) = built_site(
