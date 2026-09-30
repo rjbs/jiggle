@@ -1,0 +1,63 @@
+#!/usr/bin/env perl
+use v5.36;
+
+use FindBin;
+use lib "$FindBin::Bin/../lib";
+
+use Getopt::Long::Descriptive;
+use Jiggle::Library;
+use Jiggle::Photo;
+use Jiggle::TOML qw( load_toml_file );
+
+=head1 NAME
+
+lowercase-tags - rewrite photos' tags in lowercase, in place
+
+=head1 SYNOPSIS
+
+  tools/lowercase-tags --library LIBRARY          # dry run
+  tools/lowercase-tags --library LIBRARY --write
+
+=head1 DESCRIPTION
+
+Tags are lowercase, and jiggle lowercases any it reads with capitals, but a
+build warns about the files that have them.  This fixes those files by
+replacing just their C<tags> line with the lowercased tags (any duplicates
+that leaves are dropped), so the rest of each file is untouched.
+
+Without C<--write> it changes nothing and reports.  Review the result with
+C<git diff> in F<meta/>.
+
+=cut
+
+my ($opt, $usage) = describe_options(
+  '%c %o',
+  [ 'library=s', 'the jiggle library', { required => 1 } ],
+  [ 'write',     'change the files; without this, only report' ],
+);
+
+my $library = Jiggle::Library->new({ root => $opt->library });
+
+my ($fixed, $checked) = (0, 0);
+for my $shard (sort $library->meta_dir->children) {
+  next unless $shard->is_dir;
+  next if $shard->basename =~ /\A(?:albums|flickr|\.git)\z/;
+
+  for my $file (sort $shard->children(qr/\.toml\z/)) {
+    $checked++;
+    my $data  = load_toml_file($file);
+    my $photo = Jiggle::Photo->new($data);
+    next unless $photo->had_capital_tags;
+
+    my ($line) = $photo->as_toml =~ /^(tags = .*)$/m;
+    my $text = $file->slurp_utf8;
+    my $new  = $text =~ s/^tags = .*$/$line/mr;
+    die "no tags line in $file\n" if $new eq $text;
+
+    say sprintf '%s: [%s] -> %s', $photo->id, join(q{, }, $data->{tags}->@*), $line =~ s/\Atags = //r;
+    $file->spew_utf8($new) if $opt->write;
+    $fixed++;
+  }
+}
+
+say sprintf '%s %d of %d photo(s)', ($opt->write ? 'fixed' : 'would fix'), $fixed, $checked;
