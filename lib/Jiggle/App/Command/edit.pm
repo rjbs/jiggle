@@ -4,8 +4,6 @@ use v5.36;
 use Jiggle::App -command;
 
 use Jiggle::Editor;
-use Jiggle::Query;
-use Mojo::Server::Daemon;
 
 sub abstract { 'review and edit a batch of photos in the browser' }
 
@@ -36,30 +34,10 @@ sub validate_args ($self, $opt, $args) {
 }
 
 sub execute ($self, $opt, $args) {
-  my $library = $self->library;
-
-  my $query = eval { Jiggle::Query->new({ library => $library, terms => $args }) };
-  die $@ unless $query;
-
-  my @ids = map {; $_->id } $query->photos;
-  die "no photos match: @$args\n" unless @ids;
-
-  my $editor = Jiggle::Editor->new({
-    library => $library,
-    ids     => \@ids,
-    label   => "@$args",
+  Jiggle::Editor->serve_query($self->library, $args, {
+    port => $opt->port,
+    open => ! $opt->no_open,
   });
-
-  my $listen = "http://127.0.0.1:" . $opt->port;
-  my $url    = "$listen/?token=" . $editor->token;
-
-  my $daemon = Mojo::Server::Daemon->new(app => $editor->app, listen => [ $listen ], silent => 1);
-  $daemon->start;
-
-  say sprintf '%d photo(s); editing at %s', 0 + @ids, $url;
-  system('open', $url) if $^O eq 'darwin' && ! $opt->no_open;
-
-  $daemon->ioloop->start;
 }
 
 1;

@@ -7,8 +7,10 @@ use Digest::SHA ();
 use Jiggle::Derive;
 use Jiggle::Album;
 use Jiggle::Photo;
+use Jiggle::Query;
 use Jiggle::TOML qw( datetime_with_offset );
 use Mojo::JSON ();
+use Mojo::Server::Daemon;
 use Mojolicious;
 use Path::Tiny ();
 
@@ -70,6 +72,37 @@ my $COOKIE = 'jiggle_editor';
 # The renditions the editor shows.  Others (like og.jpg) aren't needed, and
 # the list keeps a request from naming arbitrary files.
 my %SERVABLE = map {; $_ => 1 } qw( h480.webp 500.webp 1024.webp 2048.webp poster.png video.mp4 );
+
+=method serve_query
+
+  Jiggle::Editor->serve_query($library, [ 'pending' ], { port => 3001, open => 1 });
+
+This picks a batch with L<Jiggle::Query>, then serves an editor for it on
+127.0.0.1 until interrupted, printing its URL (with the token) and, if C<open>
+is true, opening it in a browser.  It dies if nothing matches.
+
+=cut
+
+sub serve_query ($class, $library, $terms, $arg = {}) {
+  my $query = Jiggle::Query->new({ library => $library, terms => $terms });
+
+  my @ids = map {; $_->id } $query->photos;
+  die "no photos match: @$terms\n" unless @ids;
+
+  my $editor = $class->new({ library => $library, ids => \@ids, label => "@$terms" });
+
+  my $listen = "http://127.0.0.1:" . ($arg->{port} // 3001);
+  my $url    = "$listen/?token=" . $editor->token;
+
+  my $daemon = Mojo::Server::Daemon->new(app => $editor->app, listen => [ $listen ], silent => 1);
+  $daemon->start;
+
+  say sprintf '%d photo(s); editing at %s', 0 + @ids, $url;
+  say 'press control-C to stop';
+  system('open', $url) if $^O eq 'darwin' && $arg->{open};
+
+  $daemon->ioloop->start;
+}
 
 sub app ($self) {
   my $app = Mojolicious->new;
