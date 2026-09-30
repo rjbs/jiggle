@@ -140,7 +140,7 @@ subtest 'a messy backup' => sub {
   is_deeply($summary->{skipped}, [], 'nothing skipped');
 
   photo_is('the newest sidecar wins', $photos, 2174183738,
-    title => 'martha, box crawler', tags => [ 'high-st' ], taken => '2008-01-01T10:00:00');
+    title => 'martha, box crawler', tags => [ 'high-st' ], taken => '2008-01-01T10:00:00', pending => 0);
 
   photo_is('description to Markdown; upload time kept', $photos, 2173311823,
     description => 'we **know** how to use them', flickr_uploaded => '2008-12-01T12:00:00-05:00');

@@ -92,6 +92,10 @@ defaults: C<title>, C<taken>, C<tags>, and so on.
 * record_source_mtime
 If false, C<source_mtime> isn't recorded.  Default: true.  An importer whose
 files' mtimes mean nothing (like a download's) should turn this off.
+* pending
+Whether the new photo is pending: unreviewed, and so not yet published.
+Default: true.  An importer bringing in photos already reviewed elsewhere
+(like Flickr's) should turn this off.
 
 =cut
 
@@ -138,6 +142,7 @@ sub ingest_file ($self, $path, $arg = {}) {
     type  => $kind,
     taken => $facts->{taken},
     added => _datetime_with_offset(time),    # an importer may say otherwise
+    pending => ($arg->{pending} // 1),
     ($facts->{location} ? (location => $facts->{location}) : ()),
     %$extra,
     id    => $id,

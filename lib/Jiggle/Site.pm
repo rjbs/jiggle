@@ -79,7 +79,7 @@ sub site_title ($self) { $self->config->{title}    // 'Photos' }
 sub base_url   ($self) { ($self->config->{base_url} // '') =~ s{/+\z}{}r }
 
 #---------------------------------------------------------------------------
-# The model: everything the templates need, with private photos removed.
+# The model: everything the templates need, with private and pending photos removed.
 
 has photos => (
   is => 'lazy',
@@ -89,7 +89,7 @@ has photos => (
     # read) is left out, like a private one, so that nothing links to files
     # that aren't there.
     my (@ready, @missing);
-    for my $photo (grep {; $_->is_public } $self->library->photos) {
+    for my $photo (grep {; $_->is_published } $self->library->photos) {
       if ($self->_renditions_present($photo)) { push @ready, $photo }
       else                                    { push @missing, $photo->id }
     }

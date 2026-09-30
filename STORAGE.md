@@ -77,6 +77,7 @@ description = "Markdown; newlines are line breaks"
 taken = 2008-01-06T19:36:11       # TOML datetime; an offset only if known
 tags = ["high-st"]                # as typed; normalized only for URLs
 visibility = "public"             # or "private": kept, never published
+pending = true                    # not yet reviewed; usually absent
 rotate = 90                       # extra clockwise turn; usually absent
 added = 2008-01-06T21:32:33-05:00   # when it joined the collection
 flickr_id = "2173311823"          # imported photos only
@@ -106,6 +107,10 @@ private = true                    # never publish this location
 - `rotate` is a turn beyond what the file's EXIF orientation calls for, like a
   photo rotated by hand on Flickr.  Changing it remakes that photo's
   renditions.
+- `pending` marks a photo nobody has reviewed yet.  Ingest sets it, and the
+  editor clears it.  A pending photo is never published, whatever its
+  visibility, so new photos can default to public.  Imports from Flickr aren't
+  pending: they were reviewed there.
 - `visibility`: Flickr's "friend & family" is imported as private.  The
   original value is kept in the raw record (below).
 
@@ -156,7 +161,7 @@ URLs.  All of `derived/` can be deleted and remade (about 80 CPU-minutes for
 The published site, rebuilt in full by every build, with files written only
 when their content changes and renditions hardlinked from `derived/`.
 
-**Private photos are never in `site/`**: not as pages, thumbnails, map points,
+**Private and pending photos are never in `site/`**: not as pages, thumbnails, map points,
 search entries, or album covers.  Nor are the locations of photos in private
 zones or with private locations, and every published location is rounded.
 

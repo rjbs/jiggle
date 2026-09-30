@@ -90,6 +90,12 @@ subtest "when it was added is recorded" => sub {
   is($photo->added_at, $photo->added, '...and is what added_at gives');
 };
 
+subtest 'new photos are pending' => sub {
+  my ($photo) = Jiggle::Ingest->new({ library => new_library() })->ingest_files(new_jpeg());
+  ok($photo->pending, 'pending');
+  ok(! $photo->is_published, '...so not published, though public');
+};
+
 subtest 'an id collision is fatal' => sub {
   my $library = new_library();
   ingest_ok('ingest one file', $library, [ $a ], [ id_of($a) ]);

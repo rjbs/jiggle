@@ -47,6 +47,12 @@ has visibility => (
   },
 );
 
+# True for a photo nobody has reviewed yet: ingest sets it, and the editor
+# clears it.  The build never publishes a pending photo, whatever its
+# visibility, so a new photo can default to public without going out before
+# anyone has looked at it.  -- claude, 2026-09-30
+has pending => (is => 'ro', default => 0, coerce => sub ($v) { $v ? 1 : 0 });
+
 has flickr_id => (is => 'ro');
 
 # When the photo was uploaded to Flickr: a TOML datetime, with offset.  Only
@@ -81,6 +87,14 @@ has original => (is => 'ro', required => 1);
 has location => (is => 'ro');
 
 sub is_public ($self) { $self->visibility eq 'public' }
+
+=method is_published
+
+This is true if the photo belongs on the site: public, and not pending.
+
+=cut
+
+sub is_published ($self) { $self->is_public && ! $self->pending }
 
 sub ext    ($self) { $self->original->{ext}    }
 sub sha256 ($self) { $self->original->{sha256} }
@@ -155,6 +169,7 @@ sub as_toml ($self) {
     join q{, }, map {; _str($_) } $self->tags->@*;
 
   push @lines, sprintf 'visibility = %s', _str($self->visibility);
+  push @lines, 'pending = true' if $self->pending;
   push @lines, sprintf 'rotate = %d', $self->rotate if $self->rotate;
   push @lines, sprintf 'flickr_id = %s', _str($self->flickr_id)
     if defined $self->flickr_id;
