@@ -7,7 +7,7 @@ use Digest::SHA ();
 use File::Copy ();
 use Image::ExifTool ();
 use Jiggle::Photo;
-use POSIX ();
+use Jiggle::TOML qw( datetime_with_offset );
 use Path::Tiny ();
 
 =head1 NAME
@@ -141,7 +141,7 @@ sub ingest_file ($self, $path, $arg = {}) {
   my $photo = Jiggle::Photo->new({
     type  => $kind,
     taken => $facts->{taken},
-    added => _datetime_with_offset(time),    # an importer may say otherwise
+    added => datetime_with_offset(time),    # an importer may say otherwise
     pending => ($arg->{pending} // 1),
     ($facts->{location} ? (location => $facts->{location}) : ()),
     %$extra,
@@ -152,7 +152,7 @@ sub ingest_file ($self, $path, $arg = {}) {
       sha256 => $digest,
       bytes  => -s $path,
       (($arg->{record_source_mtime} // 1)
-        ? (source_mtime => _datetime_with_offset($path->stat->mtime))
+        ? (source_mtime => datetime_with_offset($path->stat->mtime))
         : ()),
       width  => $facts->{width},
       height => $facts->{height},
@@ -195,14 +195,6 @@ sub _install_original ($self, $source, $photo) {
 
 # An epoch time as a TOML datetime in local time, with the UTC offset in
 # effect at that moment: 2026-07-19T17:49:45-04:00.
-sub _datetime_with_offset ($epoch) {
-  my @t = localtime $epoch;
-  my $datetime = POSIX::strftime('%Y-%m-%dT%H:%M:%S', @t);
-  my $offset   = POSIX::strftime('%z', @t);
-  $offset =~ s/\A([-+]\d\d)(\d\d)\z/$1:$2/;
-  return "$datetime$offset";
-}
-
 sub _facts_for ($self, $path) {
   my $exif = Image::ExifTool->new;
   $exif->Options(PrintConv => 0);
