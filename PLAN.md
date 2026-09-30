@@ -370,8 +370,8 @@ token, which `jiggle edit` puts in the URL it prints.
 
 **The import helper** is ingest (marking photos pending, and deriving) followed
 by `jiggle edit pending`.  The usual source is a directory filled by Image Capture from
-the phone and pruned by hand, so HEIC files and Live Photo pairs are the
-common case, not the exception.  The Live Photo policy and the fallback date for
+the phone and pruned by hand, so HEIC files are the common case.  Live Photos are
+rare (the owner keeps them off), so skipping their MOV halves stays fine.  The Live Photo policy and the fallback date for
 photos with no EXIF time come due here.
 
 **Order of work**, each step usable on its own:
