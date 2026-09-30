@@ -554,10 +554,11 @@ function setField(photos, { name, field, labelOf = (v) => v, resolve, placeholde
   return node;
 }
 
+// Tags are lowercase; see Jiggle::Photo.
 function tagsField(photos) {
   return setField(photos, {
     name: "Tags", field: "tags", placeholder: "add a tag", list: "all-tags", split: true,
-    resolve: (text) => text === "" ? null : text,
+    resolve: (text) => text === "" ? null : text.toLowerCase(),
   });
 }
 

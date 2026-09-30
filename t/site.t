@@ -540,4 +540,32 @@ home_page_lists('added together: newest taken first; never added: last', [
   { id => 'batch002', taken => '2026-09-02T10:00:00', added => '2026-09-29T09:00:00-04:00' },
 ], [ 'batch002', 'batch001', 'noadded1' ]);
 
+subtest 'tags with capitals are built lowercased, with a warning' => sub {
+  my ($library, $root) = library_with(photos => [
+    { id => 'caps0001', tags => [ 'fastmail' ], visibility => 'private' },
+    { id => 'caps0002', tags => [ 'fastmail', 'oslo' ] },
+    { id => 'lowr0001', tags => [ 'fastmail' ] },
+  ]);
+
+  # As a person might have written them.
+  for ([ caps0001 => '"FastMail"' ], [ caps0002 => '"fastmail", "Oslo"' ]) {
+    my ($id, $tags) = @$_;
+    my $meta = $library->meta_path($id);
+    $meta->spew_utf8($meta->slurp_utf8 =~ s/^tags = .*$/tags = [$tags]/mr);
+  }
+
+  my @log;
+  Jiggle::Site->new({
+    library => Jiggle::Library->new({ root => $root }),
+    logger  => sub ($msg) { push @log, $msg },
+  })->build;
+  my $dir = $root->child('site');
+
+  my ($warning) = grep {; /capitals/ } @log;
+  like($warning // '', qr/\bwarning: 2 photo\(s\) have tags with capitals\b.*caps0001 caps0002\z/,
+    'the warning names every such photo, private ones too');
+  like($dir->child('p/caps0002/index.html')->slurp_utf8, qr{>oslo<}, 'the tag is shown lowercased');
+  ok(-e $dir->child('tags/oslo/index.html'), '...and has its page');
+};
+
 done_testing;

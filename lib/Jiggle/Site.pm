@@ -97,6 +97,12 @@ has photos => (
     $self->logger->(sprintf 'leaving out %d photo(s) with missing renditions: %s',
       0 + @missing, join q{ }, sort @missing) if @missing;
 
+    # Tags are lowercased when read, so these build as usual, but their
+    # files should be fixed.
+    my @capital = sort map {; $_->had_capital_tags ? $_->id : () } $self->library->photos;
+    $self->logger->(sprintf 'warning: %d photo(s) have tags with capitals in their metadata, used lowercased: %s%s',
+      0 + @capital, join(q{ }, List::Util::head(10, @capital)), (@capital > 10 ? q{ ...} : q{})) if @capital;
+
     # Newest first.  Photos with no date sort last, by id, so the order is at
     # least stable.
     return [

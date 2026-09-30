@@ -65,6 +65,16 @@ round_trips_ok('extra rotation', rotate => 90);
 
 round_trips_ok('pending', pending => 1);
 
+sub tags_read_as ($desc, $given, $want, $had_capitals) {
+  my $photo = photo(tags => $given);
+  is_deeply($photo->tags, $want, "tags: $desc");
+  is(!! $photo->had_capital_tags, !! $had_capitals, "tags: $desc: had capitals?");
+}
+
+tags_read_as('already lowercase', [ 'oslo', 'high-st' ], [ 'oslo', 'high-st' ], 0);
+tags_read_as('capitals lowercased', [ 'Oslo', 'QA Hackathon' ], [ 'oslo', 'qa hackathon' ], 1);
+tags_read_as('duplicates by case merged', [ 'fastmail', 'FastMail', 'x' ], [ 'fastmail', 'x' ], 1);
+
 round_trips_ok('when it was added', added => '2026-09-29T08:15:00-04:00');
 
 round_trips_ok('source mtime', original => {

@@ -157,6 +157,7 @@ writes_ok('title', { title => 'old' }, { title => 'new' }, qr/^title = "new"$/m)
 writes_ok('description', {}, { description => "two\nlines" }, qr/^description = """\ntwo\nlines"""$/m);
 writes_ok('tags, trimmed and deduplicated', { tags => [ 'x' ] },
   { tags => [ ' x ', 'y', 'x', '' ] }, qr/^tags = \["x", "y"\]$/m);
+writes_ok('tags, lowercased', {}, { tags => [ 'FastMail', 'fastmail' ] }, qr/^tags = \["fastmail"\]$/m);
 writes_ok('visibility', {}, { visibility => 'private' }, qr/^visibility = "private"$/m);
 writes_ok('pending cleared', { pending => 1 }, { pending => 0 }, qr/\A(?!.*^pending)/ms);
 writes_ok('taken', {}, { taken => '2026-09-30T10:15:00-04:00' }, qr/^taken = 2026-09-30T10:15:00-04:00$/m);

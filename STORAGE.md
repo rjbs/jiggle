@@ -75,7 +75,7 @@ type = "photo"                    # or "video"
 title = "we've got legs"
 description = "Markdown; newlines are line breaks"
 taken = 2008-01-06T19:36:11       # TOML datetime; an offset only if known
-tags = ["high-st"]                # as typed; normalized only for URLs
+tags = ["high-st"]                # lowercase
 visibility = "public"             # or "private": kept, never published
 pending = true                    # not yet reviewed; usually absent
 rotate = 90                       # extra clockwise turn; usually absent
@@ -104,6 +104,9 @@ private = true                    # never publish this location
 - `added` is when the photo joined the collection: set at ingest, or to the
   Flickr upload time on import.  Photos imported before it existed have only
   `flickr_uploaded`, which means the same.  The feed sorts by it.
+- `tags` are lowercase.  A tag with capitals is read as lowercase, and a build
+  warns about the files that have them.  On the site, tags are compared (and
+  named in URLs) by slug, so `high st` and `high-st` are one tag there.
 - `rotate` is a turn beyond what the file's EXIF orientation calls for, like a
   photo rotated by hand on Flickr.  Changing it remakes that photo's
   renditions.
