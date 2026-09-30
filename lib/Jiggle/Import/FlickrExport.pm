@@ -128,6 +128,7 @@ sub run ($self) {
 
     my $result = $self->_ingest->ingest_file($original, {
       record_source_mtime => 0,
+      pending => 0,
       metadata => sub ($facts) { $self->_photo_attributes($record, $facts) },
     });
 

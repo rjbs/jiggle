@@ -56,15 +56,17 @@ sub rotated_mov_with_gps {
   return $file;
 }
 
-# Ingest a file into a fresh library and make its renditions.  With a
-# rotate, the photo is given that extra rotation first, as an importer would.
+# Ingest a file, as already reviewed, into a fresh library and make its
+# renditions.  With a rotate, the photo is given that extra rotation
+# first, as an importer would.
 my $LIBRARIES = 0;
 sub derived_library ($file, $rotate = 0) {
   my $root = $tmp->child('lib-' . ++$LIBRARIES);
   $root->child('jiggle.toml')->touchpath;
   my $library = Jiggle::Library->new({ root => $root });
 
-  my ($photo) = Jiggle::Ingest->new({ library => $library })->ingest_files($file);
+  my $photo = Jiggle::Ingest->new({ library => $library })
+    ->ingest_file($file, { pending => 0 })->{photo};
 
   if ($rotate) {
     $photo = Jiggle::Photo->new({ %$photo, rotate => $rotate });

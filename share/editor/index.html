@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jiggle editor</title>
+  <link rel="stylesheet" href="/static/editor.css">
+</head>
+<body>
+  <header id="bar">
+    <h1>jiggle editor <span id="label"></span></h1>
+    <span id="status"></span>
+    <input id="note" type="text" placeholder="note for the commit (optional)">
+    <button id="write" class="primary" type="button" disabled title="⌘S">Write changes</button>
+  </header>
+  <aside id="sidebar"></aside>
+  <main id="sheet" tabindex="-1"></main>
+  <div id="box" hidden></div>
+  <script src="/static/editor.js"></script>
+</body>
+</html>

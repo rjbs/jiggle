@@ -2,8 +2,9 @@ package Jiggle::TOML;
 use v5.36;
 
 use Exporter 'import';
-our @EXPORT_OK = qw( load_toml_file );
+our @EXPORT_OK = qw( load_toml_file datetime_with_offset );
 
+use POSIX ();
 use TOML::Tiny ();
 
 =head1 NAME
@@ -34,6 +35,23 @@ sub load_toml_file ($file) {
 
   die "error parsing $file: $@" unless $data;
   return $data;
+}
+
+=func datetime_with_offset
+
+  my $datetime = datetime_with_offset(time);    # 2026-09-30T10:15:00-04:00
+
+This returns an epoch time as a TOML datetime on this machine's clock, with
+its UTC offset.
+
+=cut
+
+sub datetime_with_offset ($epoch) {
+  my @t = localtime $epoch;
+  my $datetime = POSIX::strftime('%Y-%m-%dT%H:%M:%S', @t);
+  my $offset   = POSIX::strftime('%z', @t);
+  $offset =~ s/\A([-+]\d\d)(\d\d)\z/$1:$2/;
+  return "$datetime$offset";
 }
 
 1;

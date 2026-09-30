@@ -30,26 +30,34 @@ sub location_published_is ($desc, $site, $photo, $want) {
   is_deeply(scalar $site->public_location($photo), $want, "location: $desc");
 }
 
-subtest 'private photos are never published' => sub {
-  my ($site, $dir) = built_site(
-    photos => [
-      { id => 'pub00001', taken => '2026-07-17T10:00:00+02:00', tags => [ 'vienna' ],
-        location => { lat => 48.2, lon => 16.37 } },
-      { id => 'priv0001', taken => '2026-07-18T10:00:00+02:00', tags => [ 'vienna', 'secret' ],
-        location => { lat => 48.21, lon => 16.38 }, visibility => 'private' },
-    ],
-    albums => [
-      # The private photo is listed first, so it would be the default cover.
-      { slug => 'trip', title => 'Trip', photos => [ 'priv0001', 'pub00001' ] },
-    ],
-  );
+# A public photo and an unpublishable one (with the given attributes) are
+# built, in an album that lists the unpublishable one first, so it would be
+# the default cover.  Nothing of the unpublishable one may appear.
+sub never_published_ok ($desc, %unpublishable) {
+  subtest "never published: $desc" => sub {
+    my ($site, $dir) = built_site(
+      photos => [
+        { id => 'pub00001', taken => '2026-07-17T10:00:00+02:00', tags => [ 'vienna' ],
+          location => { lat => 48.2, lon => 16.37 } },
+        { id => 'priv0001', taken => '2026-07-18T10:00:00+02:00', tags => [ 'vienna', 'secret' ],
+          location => { lat => 48.21, lon => 16.38 }, %unpublishable },
+      ],
+      albums => [
+        { slug => 'trip', title => 'Trip', photos => [ 'priv0001', 'pub00001' ] },
+      ],
+    );
 
-  ok(-e $dir->child('p/pub00001/index.html'), 'public photo has a page');
-  like($dir->child('map/photos.geojson')->slurp_raw, qr/pub00001/, 'public photo is on the map');
-  like($dir->child('albums/index.html')->slurp_raw, qr/pub00001/, 'public photo is the album cover');
-  never_mentioned_ok('private photo', $dir, 'priv0001');
-  ok(! -e $dir->child('tags/secret'), 'tag used only by a private photo has no page');
-};
+    ok(-e $dir->child('p/pub00001/index.html'), 'public photo has a page');
+    like($dir->child('map/photos.geojson')->slurp_raw, qr/pub00001/, 'public photo is on the map');
+    like($dir->child('albums/index.html')->slurp_raw, qr/pub00001/, 'public photo is the album cover');
+    never_mentioned_ok($desc, $dir, 'priv0001');
+    ok(! -e $dir->child('tags/secret'), 'tag used only by an unpublishable photo has no page');
+  };
+}
+
+never_published_ok('private', visibility => 'private');
+never_published_ok('pending', pending => 1);
+never_published_ok('pending and private', pending => 1, visibility => 'private');
 
 subtest 'a photo whose renditions are missing is left out' => sub {
   my $photos = [

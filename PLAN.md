@@ -299,9 +299,98 @@ Policies:
 * a video's date comes from QuickTime's `CreationDate`, which has an offset;
   `CreateDate` is UTC, so it's used only as a fallback, marked with `Z`
 
-Later, a local editor: a Mojolicious app on localhost, reading and writing the
-same TOML files, for the part Finder is bad at, such as selecting a dozen
-photos, tagging them, and adding them to an album.
+Newly ingested photos are *pending* (below) until someone reviews them in the
+editor.
+
+## The editor
+
+`jiggle edit QUERY` is the replacement for Flickr's Uploadr (#10): a
+Mojolicious app on localhost that reads and writes the same `meta/` TOML
+files, for the part Finder is bad at, like selecting a dozen photos, tagging
+them, and adding them to an album.  The workflow is: select a batch, view and
+edit it, and write the changes, as often as you like.
+
+**Pending.**  A photo with `pending = true` has not been reviewed, and the
+build never publishes it, whatever its visibility.  Ingest sets it, so new
+photos can default to public safely.  In the editor it's an ordinary field:
+when a batch is ready, select what's done and clear it.  So writing changes
+and releasing photos are separate acts: a savepoint halfway through
+captioning 200 photos publishes nothing, and a batch can be released in
+parts.  Pending is its own key, not a visibility, because visibility is one
+of the things decided during review.
+
+**Selecting a batch** is on the command line, with a small query language:
+
+    jiggle edit pending
+    jiggle edit private                 # reviewing private photos
+    jiggle edit album:berlin-2026
+    jiggle edit tag:high-st year:2008
+
+The batch is fixed when the session starts, a list of ids rather than a live
+query, so photos don't leave the contact sheet when they're released.
+
+**Viewing and editing.**  A contact sheet of the batch, from renditions in
+`derived/` (derive already covers private and pending photos, so no build is
+needed), with details and editing controls in a left sidebar.
+
+* Click selects one photo; shift-click a range; ⌘-click toggles one; dragging
+  a box selects many.
+* With one photo selected, the sidebar edits it; with several, it edits all
+  of them.
+* Fields: title, description, tags, albums, visibility, pending, `taken`
+  (for photos with no EXIF date), location privacy, and rotate (previewed
+  with CSS; renditions are remade at the next build).
+* Edited, unsaved fields are marked dirty.
+* With several photos selected, a field whose values differ is shown as
+  mixed.  For single values (title, description, visibility, ...), setting it
+  makes them uniform, and the field says so.  **Sets are edited, not
+  replaced:** tags and albums show the union with counts ("berlin 10/10",
+  "local-conf 4/10"), and a tag can be added to or removed from all of them
+  without touching the rest.  Rotate is relative, too: "turn these 90°
+  clockwise."
+* Albums: add the selection to an album, or to a new one.  Membership lives
+  in the album's file, so a write can change `meta/albums/` too.  Reordering
+  and choosing a cover come later.
+* Leaving the page with unsaved edits asks first.
+
+**Writing changes.**  A "write changes" button at the top right, not in the
+sidebar.  (⌘S does the same.)  It freezes the UI, sends each photo's dirty fields, and the server
+rewrites the files and makes a git commit in `meta/`.  The client clears
+dirty state only once the server says the commit happened.
+
+* The client sends each file's hash as it was loaded.  A file changed on disk
+  since (by hand, or a `git pull`) is refused, not overwritten.
+* The commit names only the paths the editor wrote (`git commit -- PATHS`),
+  so unrelated uncommitted work in `meta/` isn't swept in.  Its message is
+  generated ("edit 14 photos: title, tags, pending"), with an optional note.
+* A photo whose rotation was written has its renditions remade before the
+  page unfreezes, so the sheet shows it turned.
+* Album changes are sent as additions and removals, and merged with the
+  album files as they are when writing.
+
+**Security.**  Any web page open in the browser can send requests to
+localhost, so the server listens on 127.0.0.1 only and requires a random
+token, which `jiggle edit` puts in the URL it prints.
+
+**The import helper** is `jiggle ingest --edit DIR`: ingest (marking photos
+pending, and deriving), then the editor on everything pending.  The usual source is a directory filled by Image Capture from
+the phone and pruned by hand, so still photos (JPEG today, since the phone is in compatibility
+mode; perhaps HEIC later) and ordinary videos are the common case.  Live
+Photos are rare (the owner keeps them off), so skipping their MOV halves stays fine.  The Live Photo policy and the fallback date for
+photos with no EXIF time come due here.
+
+**Order of work**, each step usable on its own:  (All six are built, on the
+`jiggle-editor` branch.)
+
+1. `pending` in the model, and the build skipping pending photos.
+2. The batch query, and `jiggle edit` serving a read-only contact sheet.
+3. Editing one photo, and writing and committing.
+4. Multiple selection: mixed values, and editing sets.
+5. Albums.
+6. The import helper.
+
+**Later, maybe:** location editing on a map, reordering albums and choosing
+covers, library-wide re-tagging, and picking a batch in the browser.
 
 ## Importing from Flickr
 
@@ -359,5 +448,5 @@ backup (threads: *Coordinates missing*, *Album order and cover*).
 6. Flickr importer, once Net::Flickr::Backup is fixed and the ID scheme is
    chosen.
 7. Video.
-8. Local editor.
+8. Local editor (see *The editor*).
 9. Blog plugin, and rewriting the blog's Flickr links.

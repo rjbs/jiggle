@@ -39,6 +39,30 @@ sub from_toml_file ($class, $file) {
   return $self;
 }
 
+=method unique_slug
+
+  my $slug = Jiggle::Album->unique_slug($title, \%taken);
+
+This returns a slug for an album with the given title: lowercase, with runs of
+anything but letters and digits made into hyphens, and a number added if the
+slug is already a key in C<%taken>, which it then becomes.
+
+=cut
+
+sub unique_slug ($class, $title, $taken) {
+  my $slug = lc $title;
+  $slug =~ s/[^\p{Alnum}]+/-/g;
+  $slug =~ s/\A-+|-+\z//g;
+  $slug = 'album' unless length $slug;
+
+  my $try = $slug;
+  my $n = 1;
+  $try = "$slug-" . ++$n while $taken->{$try};
+
+  $taken->{$try} = 1;
+  return $try;
+}
+
 my $JSON = JSON::MaybeXS->new->allow_nonref->canonical;
 
 # See Jiggle::Photo: a JSON string is also a TOML basic string.

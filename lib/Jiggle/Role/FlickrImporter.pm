@@ -72,7 +72,7 @@ sub write_albums ($self, $albums) {
 
     my $slug = $existing{ $spec->{flickr_id} }
              ? $existing{ $spec->{flickr_id} }->slug
-             : _unique_slug($spec->{title} || "album-$spec->{flickr_id}", \%slug_taken);
+             : Jiggle::Album->unique_slug($spec->{title} || "album-$spec->{flickr_id}", \%slug_taken);
 
     my $album = Jiggle::Album->new({
       slug        => $slug,
@@ -89,20 +89,6 @@ sub write_albums ($self, $albums) {
   }
 
   return $n;
-}
-
-sub _unique_slug ($title, $taken) {
-  my $slug = lc $title;
-  $slug =~ s/[^\p{Alnum}]+/-/g;
-  $slug =~ s/\A-+|-+\z//g;
-  $slug = 'album' unless length $slug;
-
-  my $try = $slug;
-  my $n = 1;
-  $try = "$slug-" . ++$n while $taken->{$try};
-
-  $taken->{$try} = 1;
-  return $try;
 }
 
 1;
