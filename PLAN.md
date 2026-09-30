@@ -369,7 +369,9 @@ localhost, so the server listens on 127.0.0.1 only and requires a random
 token, which `jiggle edit` puts in the URL it prints.
 
 **The import helper** is ingest (marking photos pending, and deriving) followed
-by `jiggle edit pending`.  The Live Photo policy and the fallback date for
+by `jiggle edit pending`.  The usual source is a directory filled by Image Capture from
+the phone and pruned by hand, so HEIC files and Live Photo pairs are the
+common case, not the exception.  The Live Photo policy and the fallback date for
 photos with no EXIF time come due here.
 
 **Order of work**, each step usable on its own:
