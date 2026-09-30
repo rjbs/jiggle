@@ -107,6 +107,11 @@ sub app ($self) {
     $c->render(json => $self->batch_data);
   });
 
+  $authed->post('/api/write' => sub ($c) {
+    my $result = $self->write_changes($c->req->json // {});
+    $c->render(json => $result, status => $result->{status} // 200);
+  });
+
   $authed->get('/r/:id/#name' => sub ($c) {
     my ($id, $name) = ($c->param('id'), $c->param('name'));
     return $c->reply->not_found unless $in_batch{$id} and $SERVABLE{$name};
@@ -129,25 +134,11 @@ made to the file since it was loaded aren't overwritten.
 =cut
 
 sub batch_data ($self) {
-  my @albums = $self->_albums;
+  my @albums    = $self->_albums;
+  my %albums_of = $self->_albums_of(@albums);
 
-  my %albums_of;
-  for my $album (@albums) {
-    push $albums_of{$_}->@*, $album->slug for $album->photos->@*;
-  }
-
-  my @photos;
-  for my $id ($self->ids->@*) {
-    my $file = $self->library->meta_path($id);
-    next unless -e $file;
-    my $bytes = $file->slurp_raw;
-    my $photo = Jiggle::Photo->from_toml_file($file);
-    push @photos, {
-      $self->photo_fields($photo)->%*,
-      albums  => [ sort { $a cmp $b } ($albums_of{$id} // [])->@* ],
-      version => Digest::SHA::sha1_hex($bytes),
-    };
-  }
+  my @photos = map {; $self->_photo_record($_, \%albums_of) }
+               grep {; -e $self->library->meta_path($_) } $self->ids->@*;
 
   return {
     label  => $self->label,
@@ -189,6 +180,188 @@ sub photo_fields ($self, $photo) {
     added       => $photo->added_at,
     flickr_id   => $photo->flickr_id,
   };
+}
+
+=method write_changes
+
+  my $result = $editor->write_changes({
+    note   => 'optional; goes in the commit message',
+    photos => [
+      { id => $id, version => $version, changes => { title => '...', ... } },
+      ...
+    ],
+  });
+
+This writes the given changes to the photos' metadata files, and commits the
+files it changed to F<meta>'s git repository.  It's all or nothing: nothing
+is written unless every change is valid and every photo's C<version> matches
+its file as it is now, so a file changed since the editor loaded it (by hand,
+or a C<git pull>) is never overwritten.
+
+The changes are to the fields L</photo_fields> gives, except that
+C<location> is changed as C<location_private>, a boolean.  An empty C<taken>
+removes it.
+
+The result has C<photos>, each written photo as L</batch_data> would give it,
+and C<commit>, the new commit's abbreviated id (undef if nothing changed, or
+F<meta> isn't a git repository).  A failure has a C<status> (409 for a
+conflict, 400 for anything else) and an C<error>, and a conflict lists the
+photos in C<conflicts>.
+
+=cut
+
+my %TEXT_FIELD = map {; $_ => 1 } qw( title description );
+
+# A TOML datetime, local or with an offset, to the second.
+my $DATETIME = qr/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:Z|[-+][0-9]{2}:[0-9]{2})?\z/;
+
+sub write_changes ($self, $request) {
+  my %in_batch = map {; $_ => 1 } $self->ids->@*;
+  my (@plan, @conflicts, %fields_changed);
+
+  for my $item (($request->{photos} // [])->@*) {
+    my $id = $item->{id} // '';
+    return _failure(400, "not in this batch: $id") unless $in_batch{$id};
+
+    my $file  = $self->library->meta_path($id);
+    my $bytes = $file->slurp_raw;
+    if (Digest::SHA::sha1_hex($bytes) ne ($item->{version} // '')) {
+      push @conflicts, $id;
+      next;
+    }
+
+    my $photo = Jiggle::Photo->from_toml_file($file);
+    my %attr  = %$photo;
+
+    my $changes = $item->{changes} // {};
+    for my $field (sort keys %$changes) {
+      my $value = $changes->{$field};
+      my $error = $self->_apply_change(\%attr, $field, $value);
+      return _failure(400, "$id: $error") if $error;
+      $fields_changed{$field} = 1;
+    }
+
+    my $new = eval { Jiggle::Photo->new(\%attr) };
+    return _failure(400, "$id: " . ($@ =~ s/ at .*//sr)) unless $new;
+
+    push @plan, { file => $file, photo => $new } if $new->as_toml ne $bytes;
+  }
+
+  return _failure(409, 'changed on disk since loading: ' . join(q{, }, @conflicts),
+    conflicts => \@conflicts) if @conflicts;
+
+  for my $step (@plan) {
+    my $tmp = $step->{file}->sibling('.' . $step->{file}->basename . '.tmp');
+    $tmp->spew_utf8($step->{photo}->as_toml);
+    $tmp->move($step->{file});
+  }
+
+  my $commit;
+  if (@plan) {
+    my $message = sprintf 'edit %d photo(s): %s',
+      0 + @plan, join q{, }, sort keys %fields_changed;
+    $message .= "\n\n$request->{note}" if ($request->{note} // '') =~ /\S/;
+    $commit = $self->_commit($message, map {; $_->{file} } @plan);
+  }
+
+  my %albums_of = $self->_albums_of;
+  return {
+    commit => $commit,
+    photos => [ map {; $self->_photo_record($_->{photo}->id, \%albums_of) } @plan ],
+  };
+}
+
+sub _failure ($status, $error, %more) {
+  return { status => $status, error => $error, %more };
+}
+
+# Applies one change to a photo's attributes, returning an error, if any.
+sub _apply_change ($self, $attr, $field, $value) {
+  if ($TEXT_FIELD{$field}) {
+    return "$field must be a string" if ref $value or ! defined $value;
+    $attr->{$field} = $value;
+  }
+  elsif ($field eq 'tags') {
+    return 'tags must be a list' unless ref $value eq 'ARRAY';
+    my (%seen, @tags);
+    for my $tag (@$value) {
+      return 'tags must be strings' if ref $tag or ! defined $tag;
+      $tag =~ s/\A\s+|\s+\z//g;
+      push @tags, $tag if length $tag and ! $seen{$tag}++;
+    }
+    $attr->{tags} = \@tags;
+  }
+  elsif ($field eq 'visibility') {
+    return "unknown visibility" unless ($value // '') =~ /\A(?:public|private)\z/;
+    $attr->{visibility} = $value;
+  }
+  elsif ($field eq 'pending') {
+    $attr->{pending} = $value ? 1 : 0;
+  }
+  elsif ($field eq 'taken') {
+    $value //= '';
+    return "taken must be a datetime like 2026-09-30T10:15:00" if length $value and $value !~ $DATETIME;
+    if (length $value) { $attr->{taken} = $value } else { delete $attr->{taken} }
+  }
+  elsif ($field eq 'rotate') {
+    return 'rotate must be 0, 90, 180, or 270'
+      unless defined $value and ! ref $value and $value =~ /\A(?:0|90|180|270)\z/;
+    $attr->{rotate} = 0 + $value;
+  }
+  elsif ($field eq 'location_private') {
+    return 'no location to make private' unless $attr->{location};
+    my %loc = $attr->{location}->%*;
+    if ($value) { $loc{private} = 1 } else { delete $loc{private} }
+    $attr->{location} = \%loc;
+  }
+  else {
+    return "can't change $field";
+  }
+
+  return;
+}
+
+# Commits the given files, and only those, returning the commit's abbreviated
+# id, or undef if meta/ isn't a git repository.  Naming the paths keeps
+# anything else already staged or changed in meta/ out of the commit.
+sub _commit ($self, $message, @files) {
+  my $meta = $self->library->meta_dir;
+  return undef unless -e $meta->child('.git');
+
+  my @paths = map {; $_->relative($meta)->stringify } @files;
+  _git($meta, 'add', '--', @paths);
+  _git($meta, 'commit', '--quiet', '-m', $message, '--', @paths);
+  chomp(my $id = _git($meta, 'rev-parse', '--short', 'HEAD'));
+  return $id;
+}
+
+sub _git ($dir, @args) {
+  open my $fh, '-|', 'git', '-C', "$dir", @args or die "can't run git: $!";
+  my $out = do { local $/; <$fh> } // '';
+  close $fh or die "git @args failed\n";
+  return $out;
+}
+
+# One photo, as the page gets it, read from its file now.
+sub _photo_record ($self, $id, $albums_of) {
+  my $file  = $self->library->meta_path($id);
+  my $bytes = $file->slurp_raw;
+  my $photo = Jiggle::Photo->from_toml_file($file);
+  return {
+    $self->photo_fields($photo)->%*,
+    albums  => [ sort { $a cmp $b } ($albums_of->{$id} // [])->@* ],
+    version => Digest::SHA::sha1_hex($bytes),
+  };
+}
+
+# { photo id => [ album slug, ... ] }
+sub _albums_of ($self, @albums) {
+  @albums = $self->_albums unless @albums;
+  my %albums_of;
+  for my $album (@albums) {
+    push $albums_of{$_}->@*, $album->slug for $album->photos->@*;
+  }
+  return %albums_of;
 }
 
 sub _albums ($self) {
