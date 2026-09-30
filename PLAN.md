@@ -354,7 +354,7 @@ needed), with details and editing controls in a left sidebar.
 * Leaving the page with unsaved edits asks first.
 
 **Writing changes.**  A "write changes" button at the top right, not in the
-sidebar.  It freezes the UI, sends each photo's dirty fields, and the server
+sidebar.  (⌘S does the same.)  It freezes the UI, sends each photo's dirty fields, and the server
 rewrites the files and makes a git commit in `meta/`.  The client clears
 dirty state only once the server says the commit happened.
 
@@ -363,19 +363,24 @@ dirty state only once the server says the commit happened.
 * The commit names only the paths the editor wrote (`git commit -- PATHS`),
   so unrelated uncommitted work in `meta/` isn't swept in.  Its message is
   generated ("edit 14 photos: title, tags, pending"), with an optional note.
+* A photo whose rotation was written has its renditions remade before the
+  page unfreezes, so the sheet shows it turned.
+* Album changes are sent as additions and removals, and merged with the
+  album files as they are when writing.
 
 **Security.**  Any web page open in the browser can send requests to
 localhost, so the server listens on 127.0.0.1 only and requires a random
 token, which `jiggle edit` puts in the URL it prints.
 
-**The import helper** is ingest (marking photos pending, and deriving) followed
-by `jiggle edit pending`.  The usual source is a directory filled by Image Capture from
+**The import helper** is `jiggle ingest --edit DIR`: ingest (marking photos
+pending, and deriving), then the editor on everything pending.  The usual source is a directory filled by Image Capture from
 the phone and pruned by hand, so still photos (JPEG today, since the phone is in compatibility
 mode; perhaps HEIC later) and ordinary videos are the common case.  Live
 Photos are rare (the owner keeps them off), so skipping their MOV halves stays fine.  The Live Photo policy and the fallback date for
 photos with no EXIF time come due here.
 
-**Order of work**, each step usable on its own:
+**Order of work**, each step usable on its own:  (All six are built, on the
+`jiggle-editor` branch.)
 
 1. `pending` in the model, and the build skipping pending photos.
 2. The batch query, and `jiggle edit` serving a read-only contact sheet.
