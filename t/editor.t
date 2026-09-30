@@ -5,6 +5,7 @@ use Test::Mojo;
 
 use lib 'lib', 't/lib';
 
+use Jiggle::Album;
 use Jiggle::Editor;
 use Jiggle::TestLibrary;
 
@@ -242,6 +243,94 @@ subtest 'unchanged, and outside the batch' => sub {
 subtest 'writing needs the token' => sub {
   my ($editor, $t) = editor_for(photos => [ { id => 'aaaa0001' } ], ids => [ 'aaaa0001' ]);
   $t->post_ok('/api/write', json => { photos => [] })->status_is(403);
+};
+
+#---------------------------------------------------------------------------
+# Albums
+
+sub album_of ($editor, $slug) {
+  my $file = $editor->library->albums_dir->child("$slug.toml");
+  return -e $file ? Jiggle::Album->from_toml_file($file) : undef;
+}
+
+# Writes album changes for photos (each { id => { add => [...], remove => [...] } }),
+# with any new albums, and returns the response's JSON.
+sub write_albums ($t, $changes, @new_albums) {
+  $t->post_ok('/api/write', json => {
+    new_albums => \@new_albums,
+    photos => [
+      map {; { id => $_, version => version_of($t, $_), changes => { albums => $changes->{$_} } } }
+      sort keys %$changes
+    ],
+  });
+  return $t->tx->res->json;
+}
+
+sub album_edit_ok ($desc, $albums, $changes, $new_albums, $want) {
+  subtest "albums: $desc" => sub {
+    my ($editor, $t) = editing(
+      photos => [ map {; { id => $_ } } qw( aaaa0001 bbbb0002 cccc0003 ) ],
+      albums => $albums,
+      ids    => [ qw( aaaa0001 bbbb0002 cccc0003 ) ],
+    );
+    my $result = write_albums($t, $changes, @$new_albums);
+    $t->status_is(200) or diag explain $result;
+
+    for my $slug (sort keys %$want) {
+      my $album = album_of($editor, $slug);
+      ok($album, "$slug exists") or next;
+      is_deeply($album->photos, $want->{$slug}{photos}, "$slug: photos");
+      is($album->cover, $want->{$slug}{cover}, "$slug: cover") if exists $want->{$slug}{cover};
+    }
+    is(git($editor->library, 'status --porcelain'), '', 'everything committed');
+  };
+}
+
+my $TRIP = { slug => 'trip', title => 'Trip', photos => [ 'aaaa0001' ] };
+
+album_edit_ok('added at the end, in batch order', [ $TRIP ],
+  { cccc0003 => { add => [ 'trip' ] }, bbbb0002 => { add => [ 'trip' ] } }, [],
+  { trip => { photos => [ qw( aaaa0001 bbbb0002 cccc0003 ) ] } });
+
+album_edit_ok('removed, and the cover moves on',
+  [ { %$TRIP, photos => [ qw( aaaa0001 bbbb0002 ) ] } ],
+  { aaaa0001 => { remove => [ 'trip' ] } }, [],
+  { trip => { photos => [ 'bbbb0002' ], cover => 'bbbb0002' } });
+
+album_edit_ok('a new album', [ $TRIP ],
+  { aaaa0001 => { add => [ 'new-1' ] }, cccc0003 => { add => [ 'new-1' ] } },
+  [ { key => 'new-1', title => 'Berlin, 2026-07' } ],
+  { 'berlin-2026-07' => { photos => [ qw( aaaa0001 cccc0003 ) ], cover => 'aaaa0001' },
+    trip             => { photos => [ 'aaaa0001' ] } });
+
+album_edit_ok('a new album whose slug is taken', [ { %$TRIP, slug => 'trip' } ],
+  { bbbb0002 => { add => [ 'k' ] } }, [ { key => 'k', title => 'Trip' } ],
+  { 'trip-2' => { photos => [ 'bbbb0002' ] } });
+
+subtest 'albums: the details' => sub {
+  my ($editor, $t) = editing(
+    photos => [ map {; { id => $_ } } qw( aaaa0001 bbbb0002 ) ],
+    albums => [ $TRIP ],
+    ids    => [ qw( aaaa0001 bbbb0002 ) ],
+  );
+
+  # A hand edit to the album file after loading is merged, not lost.
+  my $file = $editor->library->albums_dir->child('trip.toml');
+  $file->spew_utf8($file->slurp_utf8 =~ s/^title = "Trip"/title = "Trip, retitled"/mr);
+
+  my $result = write_albums($t, { bbbb0002 => { add => [ 'trip' ] } },
+    { key => 'unused', title => 'Never Used' });
+  $t->status_is(200);
+
+  is(album_of($editor, 'trip')->title, 'Trip, retitled', 'the hand edit is kept');
+  is_deeply(album_of($editor, 'trip')->photos, [ qw( aaaa0001 bbbb0002 ) ], '...along with the addition');
+  is(album_of($editor, 'never-used'), undef, 'a new album given no photos is not made');
+  like(git($editor->library, 'log -1 --format=%s'), qr/\Aedit 1 photo\(s\): albums\n*\z/, 'the message');
+  is_deeply([ map {; $_->{albums} } $result->{photos}->@* ], [ [ 'trip' ] ], 'the photo comes back in its album');
+  is($result->{albums}[0]{title}, 'Trip, retitled', 'the albums come back');
+
+  write_albums($t, { aaaa0001 => { add => [ 'nope' ] } });
+  $t->status_is(400)->json_like('/error', qr/no album nope/);
 };
 
 done_testing;

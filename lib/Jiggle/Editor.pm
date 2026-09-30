@@ -7,6 +7,7 @@ use Digest::SHA ();
 use Jiggle::Derive;
 use Jiggle::Album;
 use Jiggle::Photo;
+use Jiggle::TOML qw( datetime_with_offset );
 use Mojo::JSON ();
 use Mojolicious;
 use Path::Tiny ();
@@ -155,10 +156,7 @@ sub batch_data ($self) {
     label  => $self->label,
     photos => \@photos,
     tags   => [ sort { fc $a cmp fc $b } keys %tags ],
-    albums => [
-      sort {; $a->{title} cmp $b->{title} }
-      map  {; { slug => $_->slug, title => $_->title } } @albums
-    ],
+    albums => _album_list(@albums),
   };
 }
 
@@ -214,11 +212,20 @@ The changes are to the fields L</photo_fields> gives, except that
 C<location> is changed as C<location_private>, a boolean.  An empty C<taken>
 removes it.
 
+C<albums> is changed as C<< { add => [ ... ], remove => [ ... ] } >>, naming
+albums by slug, or by the key of a new album the request makes:
+
+  new_albums => [ { key => 'new-1', title => 'Berlin, 2026-07' } ]
+
+Additions go at the end of the album, and are merged with the album's file as
+it is now.  An album whose cover is removed gets its first photo as its cover.
+
 A photo whose rotation changes has its renditions remade before this returns.
 
 The result has C<photos>, each written photo as L</batch_data> would give it,
 and C<commit>, the new commit's abbreviated id (undef if nothing changed, or
-F<meta> isn't a git repository).  A failure has a C<status> (409 for a
+F<meta> isn't a git repository).  It also has C<albums>, every album, and
+C<new_albums>, which maps each new album's key to its slug.  A failure has a C<status> (409 for a
 conflict, 400 for anything else) and an C<error>, and a conflict lists the
 photos in C<conflicts>.
 
@@ -231,8 +238,29 @@ my $DATETIME = qr/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:Z|[-
 
 sub write_changes ($self, $request) {
   my %in_batch = map {; $_ => 1 } $self->ids->@*;
-  my (@plan, @conflicts, %fields_changed);
+  my (@plan, @conflicts, %fields_changed, %touched);
 
+  # Albums as they are on disk now, and any the request makes.  Membership
+  # changes are applied to these, as additions and removals, so a change
+  # made to an album file since the page loaded is kept, not overwritten.
+  my %album = map {; $_->slug => $_ } $self->_albums;
+  my %before = map {; $_ => $album{$_}->as_toml } keys %album;
+  my %slug_for_key;
+  my %taken = map {; $_ => 1 } keys %album;
+  for my $spec (($request->{new_albums} // [])->@*) {
+    my ($key, $title) = ($spec->{key} // '', $spec->{title} // '');
+    $title =~ s/\A\s+|\s+\z//g;
+    return _failure(400, 'a new album needs a key and a title') unless length $key and length $title;
+    my $slug = Jiggle::Album->unique_slug($title, \%taken);
+    $slug_for_key{$key} = $slug;
+    $album{$slug} = Jiggle::Album->new({
+      slug    => $slug,
+      title   => $title,
+      created => datetime_with_offset(time),
+    });
+  }
+
+  my (%add_to, %remove_from);
   for my $item (($request->{photos} // [])->@*) {
     my $id = $item->{id} // '';
     return _failure(400, "not in this batch: $id") unless $in_batch{$id};
@@ -247,10 +275,23 @@ sub write_changes ($self, $request) {
     my $photo = Jiggle::Photo->from_toml_file($file);
     my %attr  = %$photo;
 
-    my $changes = $item->{changes} // {};
-    for my $field (sort keys %$changes) {
-      my $value = $changes->{$field};
-      my $error = $self->_apply_change(\%attr, $field, $value);
+    my %changes = ($item->{changes} // {})->%*;
+    if (my $albums = delete $changes{albums}) {
+      return _failure(400, "$id: albums must be { add, remove }") unless ref $albums eq 'HASH';
+      for my $op (qw( add remove )) {
+        my $ops = $op eq 'add' ? \%add_to : \%remove_from;
+        for my $name (($albums->{$op} // [])->@*) {
+          my $slug = $slug_for_key{$name} // $name;
+          return _failure(400, "$id: no album $name") unless $album{$slug};
+          push $ops->{$slug}->@*, $id;
+        }
+      }
+      $fields_changed{albums} = 1;
+      $touched{$id} = 1;
+    }
+
+    for my $field (sort keys %changes) {
+      my $error = $self->_apply_change(\%attr, $field, $changes{$field});
       return _failure(400, "$id: $error") if $error;
       $fields_changed{$field} = 1;
     }
@@ -258,23 +299,53 @@ sub write_changes ($self, $request) {
     my $new = eval { Jiggle::Photo->new(\%attr) };
     return _failure(400, "$id: " . ($@ =~ s/ at .*//sr)) unless $new;
 
-    push @plan, { file => $file, photo => $new, turned => $new->rotate != $photo->rotate }
-      if $new->as_toml ne $bytes;
+    if ($new->as_toml ne $bytes) {
+      push @plan, { file => $file, text => $new->as_toml, turned => $new->rotate != $photo->rotate, photo => $new };
+      $touched{$id} = 1;
+    }
   }
 
   return _failure(409, 'changed on disk since loading: ' . join(q{, }, @conflicts),
     conflicts => \@conflicts) if @conflicts;
 
+  my @new_titles;
+  for my $slug (sort keys %album) {
+    my $old = $album{$slug};
+    my %gone = map {; $_ => 1 } ($remove_from{$slug} // [])->@*;
+    my @photos = grep {; ! $gone{$_} } $old->photos->@*;
+    my %have = map {; $_ => 1 } @photos;
+    push @photos, grep {; ! $have{$_}++ } ($add_to{$slug} // [])->@*;
+
+    # A new album with nothing in it was made and then abandoned.
+    next if ! $before{$slug} and ! @photos;
+
+    my $cover = $old->cover;
+    $cover = $photos[0] unless defined $cover and grep {; $_ eq $cover } @photos;
+
+    my %arg = (%$old, photos => \@photos);
+    delete $arg{cover};
+    $arg{cover} = $cover if defined $cover;
+    my $new = Jiggle::Album->new(\%arg);
+
+    my $text = $new->as_toml;
+    next if defined $before{$slug} and $text eq $before{$slug};
+
+    push @new_titles, $new->title unless $before{$slug};
+    push @plan, { file => $self->library->albums_dir->child("$slug.toml"), text => $text };
+  }
+
+  $self->library->albums_dir->mkpath if @plan;
   for my $step (@plan) {
     my $tmp = $step->{file}->sibling('.' . $step->{file}->basename . '.tmp');
-    $tmp->spew_utf8($step->{photo}->as_toml);
+    $tmp->spew_utf8($step->{text});
     $tmp->move($step->{file});
   }
 
   my $commit;
   if (@plan) {
     my $message = sprintf 'edit %d photo(s): %s',
-      0 + @plan, join q{, }, sort keys %fields_changed;
+      scalar keys %touched, join q{, }, sort keys %fields_changed;
+    $message .= '; new album: ' . join q{, }, @new_titles if @new_titles;
     $message .= "\n\n$request->{note}" if ($request->{note} // '') =~ /\S/;
     $commit = $self->_commit($message, map {; $_->{file} } @plan);
   }
@@ -284,11 +355,24 @@ sub write_changes ($self, $request) {
   my @turned = map {; $_->{photo} } grep {; $_->{turned} } @plan;
   $self->derive->derive_photos(@turned) if @turned;
 
-  my %albums_of = $self->_albums_of;
+  my @albums    = $self->_albums;
+  my %albums_of = $self->_albums_of(@albums);
   return {
     commit => $commit,
-    photos => [ map {; $self->_photo_record($_->{photo}->id, \%albums_of) } @plan ],
+    photos => [
+      map  {; $self->_photo_record($_, \%albums_of) }
+      grep {; $touched{$_} } $self->ids->@*
+    ],
+    albums     => _album_list(@albums),
+    new_albums => \%slug_for_key,
   };
+}
+
+sub _album_list (@albums) {
+  return [
+    sort {; fc $a->{title} cmp fc $b->{title} }
+    map  {; { slug => $_->slug, title => $_->title } } @albums
+  ];
 }
 
 sub _failure ($status, $error, %more) {

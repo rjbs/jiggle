@@ -17,6 +17,8 @@ const state = {
   edits:    new Map(),   // id => { field: value }
   selected: new Set(),
   anchor:   null,        // where a shift-click range starts
+  newAlbums: new Map(),  // key => title, for albums made here and not yet written
+  newAlbumCount: 0,
   frozen:   false,
 };
 
@@ -54,6 +56,7 @@ const SAVED = {
   title:            p => p.title,
   description:      p => p.description,
   tags:             p => p.tags,
+  albums:           p => p.albums,
   visibility:       p => p.visibility,
   pending:          p => p.pending,
   taken:            p => p.taken ?? "",
@@ -62,6 +65,13 @@ const SAVED = {
 };
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+// Tags and albums are sets: a tag removed and put back is no change, though
+// it would now be last.
+const SET_FIELDS = new Set([ "tags", "albums" ]);
+const sameValue = (field, a, b) => SET_FIELDS.has(field)
+  ? a.length === b.length && a.every(x => b.includes(x))
+  : same(a, b);
 
 function current(p, field) {
   const e = state.edits.get(p.id);
@@ -78,7 +88,7 @@ function change(photos, field, fn) {
   for (const p of photos) {
     const value = fn(current(p, field), p);
     const e = state.edits.get(p.id) || {};
-    if (same(value, SAVED[field](p))) delete e[field];
+    if (sameValue(field, value, SAVED[field](p))) delete e[field];
     else e[field] = value;
     if (Object.keys(e).length) state.edits.set(p.id, e);
     else state.edits.delete(p.id);
@@ -465,51 +475,61 @@ function rotateField(photos) {
   return node;
 }
 
-// Tags: the union across the selection, each with how many have it.  A tag
-// can be added to or removed from all of them, leaving their other tags
-// alone.  Tags removed but not yet written are shown struck through, so they
-// can be put back.
-function tagsField(photos) {
+// A field whose value is a set: tags, or albums.  It shows the union across
+// the selection, each with how many have it, and each can be added to or
+// removed from all of them, leaving the rest alone.  Members removed but not
+// yet written are shown struck through, so they can be put back.
+//
+// labelOf gives a member's text, and resolve turns what was typed into a
+// member, or null.  With split, what's typed is split at commas into several:
+// tags can't contain commas, but album titles often do.
+function setField(photos, { name, field, labelOf = (v) => v, resolve, placeholder, list, split = false }) {
   const control = el("div");
-  const node = fieldFrame("Tags", photos, "tags", control);
+  const node = fieldFrame(name, photos, field, control);
+  const n = photos.length;
 
-  const add = (tag) => {
-    tag = tag.trim();
-    if (!tag) return;
-    change(photos, "tags", tags => tags.includes(tag) ? tags : [ ...tags, tag ]);
+  const add = (v) => change(photos, field, vs => vs.includes(v) ? vs : [ ...vs, v ]);
+  const remove = (v) => change(photos, field, vs => vs.filter(x => x !== v));
+  const restore = (v) => change(photos, field, (vs, p) =>
+    SAVED[field](p).includes(v) && !vs.includes(v) ? [ ...vs, v ] : vs);
+
+  const input = el("input", { type: "text", list, placeholder: n > 1 ? `${placeholder} to all ${n}` : placeholder });
+  const enter = () => {
+    for (const text of split ? input.value.split(",") : [ input.value ]) {
+      const v = resolve(text.trim());
+      if (v !== null) add(v);
+    }
+    input.value = "";
+    draw();
   };
-  const remove = (tag) => change(photos, "tags", tags => tags.filter(t => t !== tag));
-  const restore = (tag) => change(photos, "tags", (tags, p) =>
-    SAVED.tags(p).includes(tag) && !tags.includes(tag) ? [ ...tags, tag ] : tags);
-
-  const input = el("input", { type: "text", list: "all-tags", placeholder: photos.length > 1 ? `add a tag to all ${photos.length}` : "add a tag" });
 
   const draw = () => {
     const counts = new Map();
-    for (const p of photos) for (const t of current(p, "tags")) counts.set(t, (counts.get(t) || 0) + 1);
+    for (const p of photos) for (const v of current(p, field)) counts.set(v, (counts.get(v) || 0) + 1);
 
     const removed = new Set();
-    for (const p of photos) for (const t of SAVED.tags(p)) if (!counts.has(t)) removed.add(t);
+    for (const p of photos) for (const v of SAVED[field](p)) if (!counts.has(v)) removed.add(v);
 
-    const added = (t) => photos.some(p => current(p, "tags").includes(t) && !SAVED.tags(p).includes(t));
-    const names = [ ...counts.keys(), ...removed ].sort((a, b) => a.localeCompare(b));
+    const added = (v) => photos.some(p => current(p, field).includes(v) && !SAVED[field](p).includes(v));
+    const members = [ ...counts.keys(), ...removed ]
+      .sort((a, b) => labelOf(a).localeCompare(labelOf(b)));
 
-    const chips = names.map(t => {
-      if (removed.has(t)) {
-        return el("span", { class: "chip removed" }, t,
-          el("button", { type: "button", text: "↺", title: "put it back", onclick: () => { restore(t); draw(); } }));
+    const chips = members.map(v => {
+      if (removed.has(v)) {
+        return el("span", { class: "chip removed" }, labelOf(v),
+          el("button", { type: "button", text: "↺", title: "put it back", onclick: () => { restore(v); draw(); } }));
       }
-      const c = counts.get(t);
-      const partial = c < photos.length;
-      return el("span", { class: `chip${partial ? " partial" : ""}${added(t) ? " added" : ""}` },
-        t,
-        photos.length > 1
-          ? el("button", { type: "button", class: "count", text: `${c}/${photos.length}`,
+      const c = counts.get(v);
+      const partial = c < n;
+      return el("span", { class: `chip${partial ? " partial" : ""}${added(v) ? " added" : ""}` },
+        labelOf(v),
+        n > 1
+          ? el("button", { type: "button", class: "count", text: `${c}/${n}`,
               title: partial ? "add to all of them" : "all of them have it",
-              disabled: !partial, onclick: () => { add(t); draw(); } })
+              disabled: !partial, onclick: () => { add(v); draw(); } })
           : null,
-        el("button", { type: "button", text: "×", title: photos.length > 1 ? "remove from all of them" : "remove",
-          onclick: () => { remove(t); draw(); } }),
+        el("button", { type: "button", text: "×", title: n > 1 ? "remove from all of them" : "remove",
+          onclick: () => { remove(v); draw(); } }),
       );
     });
 
@@ -518,41 +538,61 @@ function tagsField(photos) {
   };
 
   input.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter" || ev.key === ",") {
+    if (ev.key === "Enter" || (split && ev.key === ",")) {
       ev.preventDefault();
-      for (const t of input.value.split(",")) add(t);
-      input.value = "";
-      draw();
+      enter();
       input.focus();
-    } else if (ev.key === "Backspace" && input.value === "" && photos.length === 1) {
-      const tags = current(photos[0], "tags");
-      if (tags.length) { remove(tags[tags.length - 1]); draw(); input.focus(); }
+    } else if (ev.key === "Backspace" && input.value === "" && n === 1) {
+      const vs = current(photos[0], field);
+      if (vs.length) { remove(vs[vs.length - 1]); draw(); input.focus(); }
     }
   });
-  // A tag typed but not entered is added when leaving the field.
-  input.addEventListener("blur", () => {
-    if (input.value.trim()) { for (const t of input.value.split(",")) add(t); input.value = ""; draw(); }
-  });
+  // Something typed but not entered is added when leaving the field.
+  input.addEventListener("blur", () => { if (input.value.trim()) enter(); });
 
   draw();
   return node;
 }
 
-function albumsField(photos) {
-  const counts = new Map();
-  for (const p of photos) for (const a of p.albums) counts.set(a, (counts.get(a) || 0) + 1);
-  const title = (slug) => (state.albums.find(a => a.slug === slug) || { title: slug }).title;
-  const names = [ ...counts.keys() ].sort((a, b) => title(a).localeCompare(title(b)));
+function tagsField(photos) {
+  return setField(photos, {
+    name: "Tags", field: "tags", placeholder: "add a tag", list: "all-tags", split: true,
+    resolve: (text) => text === "" ? null : text,
+  });
+}
 
-  return el("div", { class: "field" },
-    el("div", { class: "name", text: "Albums" }),
-    names.length
-      ? el("div", { class: "chips" }, names.map(slug =>
-          el("span", { class: `chip${counts.get(slug) < photos.length ? " partial" : ""}` },
-            title(slug),
-            photos.length > 1 ? el("span", { class: "count", text: `${counts.get(slug)}/${photos.length}` }) : null)))
-      : el("div", { class: "value empty", text: "none" }),
-  );
+// Albums are named by slug, or, for one made here and not yet written, by a
+// key ("new:1") that the write turns into a slug.  Typing an album's title
+// picks it; typing anything else makes a new album with that title.
+function albumTitle(slug) {
+  if (state.newAlbums.has(slug)) return state.newAlbums.get(slug);
+  const a = state.albums.find(a => a.slug === slug);
+  return a ? a.title : slug;
+}
+
+function albumsField(photos) {
+  return setField(photos, {
+    name: "Albums", field: "albums", placeholder: "add to an album", list: "all-albums",
+    labelOf: (slug) => state.newAlbums.has(slug) ? `${albumTitle(slug)} (new)` : albumTitle(slug),
+    resolve: (text) => {
+      if (text === "") return null;
+      const lc = text.toLowerCase();
+      const found = state.albums.find(a => a.title.toLowerCase() === lc || a.slug === text);
+      if (found) return found.slug;
+      for (const [key, title] of state.newAlbums) if (title.toLowerCase() === lc) return key;
+      const key = `new:${++state.newAlbumCount}`;
+      state.newAlbums.set(key, text);
+      refreshAlbumList();
+      return key;
+    },
+  });
+}
+
+function refreshAlbumList() {
+  const titles = [ ...state.albums.map(a => a.title), ...state.newAlbums.values() ];
+  const list = el("datalist", { id: "all-albums" }, titles.map(t => el("option", { value: t })));
+  const old = document.getElementById("all-albums");
+  if (old) old.replaceWith(list); else document.body.append(list);
 }
 
 function preview(p) {
@@ -632,9 +672,23 @@ async function write() {
   if (state.frozen || !state.edits.size) return;
   if (document.activeElement) document.activeElement.blur();
 
-  const sent = [ ...state.edits.entries() ].map(([id, changes]) => ({
-    id, version: state.byId.get(id).version, changes: { ...changes },
-  }));
+  // Album membership goes as additions and removals, which the server merges
+  // with the album files as they are then.
+  const used = new Set();
+  const sent = [ ...state.edits.entries() ].map(([id, edits]) => {
+    const p = state.byId.get(id);
+    const changes = { ...edits };
+    if ("albums" in changes) {
+      const was = SAVED.albums(p);
+      changes.albums = {
+        add:    changes.albums.filter(a => !was.includes(a)),
+        remove: was.filter(a => !changes.albums.includes(a)),
+      };
+      for (const a of changes.albums.add) if (state.newAlbums.has(a)) used.add(a);
+    }
+    return { id, version: p.version, changes };
+  });
+  const newAlbums = [ ...used ].map(key => ({ key, title: state.newAlbums.get(key) }));
 
   freeze(true);
   setStatus(`writing ${sent.length} photo(s)…`);
@@ -644,7 +698,7 @@ async function write() {
     res = await fetch("/api/write", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note: $("#note").value, photos: sent }),
+      body: JSON.stringify({ note: $("#note").value, photos: sent, new_albums: newAlbums }),
     });
     data = await res.json();
   } catch (e) {
@@ -670,6 +724,9 @@ async function write() {
   // photo sent is now as written, or was already as asked.
   for (const record of data.photos) replaceSaved(record);
   for (const { id } of sent) state.edits.delete(id);
+  state.albums = data.albums;
+  state.newAlbums.clear();
+  refreshAlbumList();
   $("#note").value = "";
 
   setStatus(data.commit ? `committed ${data.commit}: ${data.photos.length} photo(s)` : "nothing needed changing");
@@ -735,6 +792,7 @@ async function start() {
 
   const list = el("datalist", { id: "all-tags" }, state.tags.map(t => el("option", { value: t })));
   document.body.append(list);
+  refreshAlbumList();
 
   $("#label").textContent = state.label;
   document.title = `jiggle editor: ${state.label}`;
