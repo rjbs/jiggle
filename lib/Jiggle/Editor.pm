@@ -4,6 +4,7 @@ use v5.36;
 use Moo;
 
 use Digest::SHA ();
+use Jiggle::Derive;
 use Jiggle::Album;
 use Jiggle::Photo;
 use Mojo::JSON ();
@@ -49,6 +50,13 @@ has token => (
     read($fh, my $bytes, 16) == 16 or die "short read from /dev/urandom\n";
     return unpack 'H*', $bytes;
   },
+);
+
+# What remakes renditions when a write changes a photo's rotation, so the
+# editor shows it turned.
+has derive => (
+  is => 'lazy',
+  default => sub ($self) { Jiggle::Derive->new({ library => $self->library }) },
 );
 
 has share_dir => (
@@ -127,7 +135,8 @@ sub app ($self) {
 =method batch_data
 
 This returns the batch as the editor's page gets it: the photos, in order, as
-they are on disk now, and the library's albums.  Each photo has a C<version>,
+they are on disk now, the library's albums, and every tag in the library (as
+of when the editor started), for suggestions.  Each photo has a C<version>,
 the digest of its metadata file, which a write must present so that changes
 made to the file since it was loaded aren't overwritten.
 
@@ -140,9 +149,12 @@ sub batch_data ($self) {
   my @photos = map {; $self->_photo_record($_, \%albums_of) }
                grep {; -e $self->library->meta_path($_) } $self->ids->@*;
 
+  my %tags = map {; $_ => 1 } map {; $_->tags->@* } $self->library->photos;
+
   return {
     label  => $self->label,
     photos => \@photos,
+    tags   => [ sort { fc $a cmp fc $b } keys %tags ],
     albums => [
       sort {; $a->{title} cmp $b->{title} }
       map  {; { slug => $_->slug, title => $_->title } } @albums
@@ -202,6 +214,8 @@ The changes are to the fields L</photo_fields> gives, except that
 C<location> is changed as C<location_private>, a boolean.  An empty C<taken>
 removes it.
 
+A photo whose rotation changes has its renditions remade before this returns.
+
 The result has C<photos>, each written photo as L</batch_data> would give it,
 and C<commit>, the new commit's abbreviated id (undef if nothing changed, or
 F<meta> isn't a git repository).  A failure has a C<status> (409 for a
@@ -244,7 +258,8 @@ sub write_changes ($self, $request) {
     my $new = eval { Jiggle::Photo->new(\%attr) };
     return _failure(400, "$id: " . ($@ =~ s/ at .*//sr)) unless $new;
 
-    push @plan, { file => $file, photo => $new } if $new->as_toml ne $bytes;
+    push @plan, { file => $file, photo => $new, turned => $new->rotate != $photo->rotate }
+      if $new->as_toml ne $bytes;
   }
 
   return _failure(409, 'changed on disk since loading: ' . join(q{, }, @conflicts),
@@ -263,6 +278,11 @@ sub write_changes ($self, $request) {
     $message .= "\n\n$request->{note}" if ($request->{note} // '') =~ /\S/;
     $commit = $self->_commit($message, map {; $_->{file} } @plan);
   }
+
+  # The write is done (and committed) whether or not this works; a photo
+  # whose renditions fail is noted in derive's manifest, as always.
+  my @turned = map {; $_->{photo} } grep {; $_->{turned} } @plan;
+  $self->derive->derive_photos(@turned) if @turned;
 
   my %albums_of = $self->_albums_of;
   return {

@@ -8,10 +8,17 @@ use lib 'lib', 't/lib';
 use Jiggle::Editor;
 use Jiggle::TestLibrary;
 
+# Derive is replaced by something that only records what it was asked to
+# remake, so these tests don't need libvips.
+package Recording::Derive {
+  sub new ($class) { bless { remade => [] }, $class }
+  sub derive_photos ($self, @photos) { push $self->{remade}->@*, map {; $_->id } @photos; 0 }
+}
+
 sub editor_for (%arg) {
   my $ids = delete $arg{ids};
   my ($library) = library_with(%arg);
-  my $editor = Jiggle::Editor->new({ library => $library, ids => $ids });
+  my $editor = Jiggle::Editor->new({ library => $library, ids => $ids, derive => Recording::Derive->new });
   return ($editor, Test::Mojo->new($editor->app));
 }
 
@@ -61,7 +68,8 @@ subtest 'the batch, as it is on disk' => sub {
     ->json_is('/photos/1/tags', [ 'x' ])
     ->json_is('/photos/1/location', { private => 1 }, 'location privacy, but no coordinates')
     ->json_hasnt('/photos/2', 'only the batch')
-    ->json_is('/albums', [ { slug => 'trip', title => 'Trip' } ], 'every album');
+    ->json_is('/albums', [ { slug => 'trip', title => 'Trip' } ], 'every album')
+    ->json_is('/tags', [ 'x' ], 'every tag');
 
   like($t->tx->res->json->{photos}[0]{version}, qr/\A[0-9a-f]{40}\z/, 'a version');
 
@@ -189,6 +197,17 @@ subtest 'the commit' => sub {
   is(git($editor->library, 'status --porcelain'), " M cc/cccc0003.toml\n", 'the other change is left alone');
 
   is($t->tx->res->json->{photos}[0]{version}, version_of($t, 'aaaa0001'), 'the new version is current');
+};
+
+subtest 'a turned photo has its renditions remade' => sub {
+  my ($editor, $t) = editing(photos => [ { id => 'aaaa0001' }, { id => 'bbbb0002' } ], ids => [ 'aaaa0001', 'bbbb0002' ]);
+  $t->post_ok('/api/write', json => {
+    photos => [
+      { id => 'aaaa0001', version => version_of($t, 'aaaa0001'), changes => { rotate => 90 } },
+      { id => 'bbbb0002', version => version_of($t, 'bbbb0002'), changes => { title => 'x' } },
+    ],
+  })->status_is(200);
+  is_deeply($editor->derive->{remade}, [ 'aaaa0001' ], 'only the turned one');
 };
 
 subtest 'changed on disk since loading' => sub {

@@ -58,6 +58,8 @@ body.frozen #sidebar, body.frozen #sheet { pointer-events: none; opacity: 0.6; }
 #bar h1 { font-size: 15px; margin: 0; flex: 1; }
 #label { color: var(--muted); font-weight: normal; margin-left: 0.5em; }
 #status { color: var(--muted); }
+#status button { margin-left: 0.5em; padding: 2px 8px; }
+#note { width: 18em; font: inherit; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
 #status.bad { color: var(--bad); }
 
 button {
@@ -80,7 +82,12 @@ button.primary:not(:disabled) { background: var(--accent); border-color: var(--a
   border-right: 1px solid var(--line);
 }
 #sidebar h2 { font-size: 13px; margin: 0 0 10px; color: var(--muted); font-weight: 600; }
-#sidebar .preview { width: 100%; border-radius: 4px; display: block; margin-bottom: 10px; background: var(--bg); }
+#sidebar .preview {
+  width: 100%; aspect-ratio: 1;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 10px; background: var(--bg); border-radius: 4px; overflow: hidden;
+}
+#sidebar .preview img { max-width: 100%; max-height: 100%; }
 #sidebar .empty { color: var(--muted); }
 
 .field { margin: 0 0 12px; }
@@ -101,9 +108,23 @@ button.primary:not(:disabled) { background: var(--accent); border-color: var(--a
 .field .value { white-space: pre-wrap; word-break: break-word; }
 .field .note { font-size: 12px; color: var(--muted); margin-top: 3px; }
 
-.field.dirty > label::after, .field.dirty > .name::after {
-  content: "edited"; color: var(--dirty); font-weight: 600;
+.field .revert {
+  display: none;
+  margin-left: auto;
+  padding: 0 6px;
+  font-size: 11px;
+  border-color: var(--dirty);
+  color: var(--dirty);
 }
+.field.dirty > .name { color: var(--dirty); font-weight: 600; }
+.field.dirty .revert { display: inline-block; }
+.field.invalid input { border-color: var(--bad); }
+.field.invalid .note { color: var(--bad); }
+.field .row { display: flex; align-items: center; gap: 6px; }
+.field .row .value { flex: 1; }
+.field .row button { padding: 2px 10px; font-size: 16px; line-height: 1.2; }
+.field label.check { display: flex; align-items: center; gap: 6px; }
+.field > div > input[type=text] { margin-top: 6px; }
 .field.dirty input, .field.dirty textarea, .field.dirty select { border-color: var(--dirty); }
 .field.mixed .note { color: var(--mixed); }
 .field.mixed input::placeholder, .field.mixed textarea::placeholder { color: var(--mixed); }
@@ -118,6 +139,8 @@ button.primary:not(:disabled) { background: var(--accent); border-color: var(--a
 }
 .chip.partial { border-style: dashed; }
 .chip .count { color: var(--mixed); font-size: 11px; }
+.chip button.count:not(:disabled):hover { color: var(--fg); text-decoration: underline; }
+.chip button.count:disabled { opacity: 1; }
 .chip.added { border-color: var(--dirty); }
 .chip.removed { text-decoration: line-through; opacity: 0.6; border-color: var(--dirty); }
 .chip button { border: 0; padding: 0 4px; background: none; color: var(--muted); }
@@ -141,14 +164,15 @@ button.primary:not(:disabled) { background: var(--accent); border-color: var(--a
 
 .thumb {
   position: relative;
-  height: calc(var(--thumb-h) + 20px);
+  height: calc(var(--thumb-h) + 28px);
   margin: 0;
   padding: 3px;
   border-radius: 5px;
   border: 2px solid transparent;
 }
+.thumb .frame { position: relative; height: var(--thumb-h); }
 .thumb img {
-  height: var(--thumb-h);
+  position: absolute;
   display: block;
   border-radius: 2px;
   background: var(--line);
@@ -161,8 +185,8 @@ button.primary:not(:disabled) { background: var(--accent); border-color: var(--a
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
-  height: 16px;
-  margin-top: 1px;
+  height: 18px;
+  margin-top: 3px;
 }
 .thumb.selected { border-color: var(--accent); background: var(--accent-soft); }
 .thumb .badges { position: absolute; top: 7px; left: 7px; display: flex; gap: 3px; }
@@ -172,13 +196,8 @@ button.primary:not(:disabled) { background: var(--accent); border-color: var(--a
   background: rgba(0, 0, 0, 0.6); color: white;
 }
 .thumb .badge.pending { background: rgba(217, 119, 6, 0.9); }
-.thumb.dirty::after {
-  content: "";
-  position: absolute; top: 7px; right: 7px;
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--dirty);
-  box-shadow: 0 0 0 2px white;
-}
+.thumb.dirty figcaption { color: var(--dirty); font-weight: 600; }
+.thumb.dirty figcaption::before { content: "● "; }
 
 #box {
   position: fixed;
