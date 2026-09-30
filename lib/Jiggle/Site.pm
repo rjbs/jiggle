@@ -144,6 +144,30 @@ sub _instant ($datetime) {
   return $epoch;
 }
 
+=method recent_photos
+
+  my @photos = $site->recent_photos($n);
+
+This returns the C<$n> most recently added photos, newest first, for the home
+page: uploading an old set after a new trip puts the old set first, so the
+home page always shows what's new.  Photos added at the same moment come
+newest taken first, and photos with no C<added_at> come last.
+
+=cut
+
+sub recent_photos ($self, $n) {
+  my %when = map {; $_->id => scalar _instant($_->added_at) } $self->photos->@*;
+
+  my @sorted = sort {;
+       (defined $when{ $b->id } <=> defined $when{ $a->id })
+    || (($when{ $b->id } // 0) <=> ($when{ $a->id } // 0))
+    || (($b->taken // '') cmp ($a->taken // ''))
+    || ($a->id cmp $b->id)
+  } $self->photos->@*;
+
+  return List::Util::head($n, @sorted);
+}
+
 =method public_location
 
   my $loc = $site->public_location($photo);
@@ -510,7 +534,7 @@ sub build ($self) {
 
   $self->_write_page('index.html', 'index', {
     title  => $self->site_title,
-    photos => [ List::Util::head(100, @photos) ],
+    photos => [ $self->recent_photos(100) ],
   });
 
   $self->_phase('photo pages',     sub { $self->_build_photo_pages(\@photos) });

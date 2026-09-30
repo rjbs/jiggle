@@ -516,4 +516,28 @@ subtest 'descriptions are Markdown' => sub {
     'Bold and a link. More.');
 };
 
+sub home_page_lists ($desc, $photos, $want) {
+  my (undef, $dir) = built_site(photos => $photos);
+  my @ids = $dir->child('index.html')->slurp_utf8 =~ m{href="/p/([^/]+)/"}g;
+  my %seen;
+  is_deeply([ grep {; ! $seen{$_}++ } @ids ], $want, "home page: $desc");
+}
+
+home_page_lists('newest added first, whenever taken', [
+  { id => 'trip0001', taken => '2026-09-20T10:00:00', added => '2026-09-25T09:00:00-04:00' },
+  { id => 'oldset01', taken => '2008-01-06T19:36:11', added => '2026-09-29T09:00:00-04:00' },
+  { id => 'flickr01', taken => '2026-01-01T12:00:00', flickr_uploaded => '2026-01-02T12:00:00-05:00' },
+], [ 'oldset01', 'trip0001', 'flickr01' ]);
+
+home_page_lists('offsets are compared as instants', [
+  { id => 'berlin01', added => '2026-07-16T19:00:00+02:00' },    # 17:00 UTC
+  { id => 'phila001', added => '2026-07-16T14:00:00-04:00' },    # 18:00 UTC
+], [ 'phila001', 'berlin01' ]);
+
+home_page_lists('added together: newest taken first; never added: last', [
+  { id => 'noadded1', taken => '2026-09-30T10:00:00' },
+  { id => 'batch001', taken => '2026-09-01T10:00:00', added => '2026-09-29T09:00:00-04:00' },
+  { id => 'batch002', taken => '2026-09-02T10:00:00', added => '2026-09-29T09:00:00-04:00' },
+], [ 'batch002', 'batch001', 'noadded1' ]);
+
 done_testing;
