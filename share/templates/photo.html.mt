@@ -14,6 +14,7 @@
          srcset="<%= $site->srcset($photo) %>"
          sizes="(max-width: 1200px) 100vw, 1200px"
          width="<%= $w %>" height="<%= $h %>"
+         style="--ar: <%= sprintf '%.4f', $w / $h %>; --w: <%= $w %>px"
          alt="<%= $site->display_title($photo) %>">
 % }
   </figure>

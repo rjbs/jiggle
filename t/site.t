@@ -568,4 +568,10 @@ subtest 'tags with capitals are built lowercased, with a warning' => sub {
   ok(-e $dir->child('tags/oslo/index.html'), '...and has its page');
 };
 
+subtest "a photo's size is known before it loads" => sub {
+  my (undef, $dir) = built_site(photos => [ { id => 'wide0001' } ]);
+  like($dir->child('p/wide0001/index.html')->slurp_utf8,
+    qr{<img [^>]*style="--ar: 1\.3333; --w: 2048px"}, 'aspect ratio and largest width, for the CSS');
+};
+
 done_testing;

@@ -108,17 +108,20 @@ h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
 
 .photo figure { margin: 0; text-align: center; }
 
+/* A photo or video is sized from its aspect ratio, given by the page as --ar:
+   as wide as will fit, but no wider than 85vh of height allows.  Sizing it
+   from its own file instead would leave it no size until the file loaded,
+   and the page below would jump when it did.  A photo is also no wider than
+   its largest rendition (--w), so a small one isn't enlarged.
+   -- claude, 2026-09-27, 2026-09-30 */
 .photo figure img {
-  max-width: 100%;
+  display: block;
+  margin: 0 auto;
+  aspect-ratio: var(--ar);
+  width: min(100%, calc(85vh * var(--ar)), var(--w));
   height: auto;
-  max-height: 85vh;
-  width: auto;
 }
 
-/* Browsers shrink an img proportionally under max-height, but not a video,
-   whose intrinsic size isn't known until its metadata loads.  So a video is
-   sized explicitly from its aspect ratio, given by the page as --ar: as wide
-   as will fit, but no wider than 85vh of height allows.  -- claude, 2026-09-27 */
 .photo figure video {
   display: block;
   margin: 0 auto;
