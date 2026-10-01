@@ -516,11 +516,12 @@ subtest 'descriptions are Markdown' => sub {
     'Bold and a link. More.');
 };
 
-sub home_page_lists ($desc, $photos, $want) {
-  my (undef, $dir) = built_site(photos => $photos);
-  my @ids = $dir->child('index.html')->slurp_utf8 =~ m{href="/p/([^/]+)/"}g;
-  my %seen;
-  is_deeply([ grep {; ! $seen{$_}++ } @ids ], $want, "home page: $desc");
+# What the home page lists, in order: photo ids, and albums as "album:SLUG".
+sub home_page_lists ($desc, $photos, $want, %arg) {
+  my ($library) = library_with(photos => $photos, albums => $arg{albums} // []);
+  my $site = Jiggle::Site->new({ library => $library });
+  my @got = map {; ref $_ eq 'HASH' ? "album:$_->{slug}" : $_->id } $site->home_items($arg{n} // 100);
+  is_deeply(\@got, $want, "home page: $desc");
 }
 
 home_page_lists('newest added first, whenever taken', [
@@ -572,6 +573,48 @@ subtest "a photo's size is known before it loads" => sub {
   my (undef, $dir) = built_site(photos => [ { id => 'wide0001' } ]);
   like($dir->child('p/wide0001/index.html')->slurp_utf8,
     qr{<img [^>]*style="--ar: 1\.3333; --w: 2048px"}, 'aspect ratio and largest width, for the CSS');
+};
+
+my @TRIP = (
+  { id => 'trip0001', taken => '2026-07-16T10:00:00', added => '2026-07-20T09:00:00-04:00' },
+  { id => 'trip0002', taken => '2026-07-17T10:00:00', added => '2026-07-20T09:00:01-04:00' },
+);
+
+home_page_lists('an album stands for its photos, dated by its newest', [
+  @TRIP,
+  { id => 'loose001', added => '2026-07-21T09:00:00-04:00' },
+  { id => 'loose002', added => '2026-07-19T09:00:00-04:00' },
+], [ 'loose001', 'album:berlin', 'loose002' ],
+  albums => [ { slug => 'berlin', title => 'Berlin', created => '2026-07-01T00:00:00-04:00', photos => [ 'trip0001', 'trip0002' ] } ]);
+
+home_page_lists('adding to an old album brings it back up', [
+  { id => 'old00001', added => '2008-01-06T21:32:33-05:00' },
+  { id => 'new00001', added => '2026-09-30T09:00:00-04:00' },
+  { id => 'loose001', added => '2026-09-01T09:00:00-04:00' },
+], [ 'album:dining', 'loose001' ],
+  albums => [ { slug => 'dining', title => 'Dining', created => '2008-01-06T21:49:26-05:00', photos => [ 'old00001', 'new00001' ] } ]);
+
+home_page_lists("an album's photos stay out, even when it's past the end", [
+  @TRIP,
+  { id => 'loose001', added => '2026-09-01T09:00:00-04:00' },
+], [ 'loose001' ], n => 1,
+  albums => [ { slug => 'berlin', title => 'Berlin', photos => [ 'trip0001', 'trip0002' ] } ]);
+
+home_page_lists('a private photo keeps nothing out, and an album of them is no album', [
+  { id => 'priv0001', added => '2026-09-01T09:00:00-04:00', visibility => 'private' },
+  { id => 'loose001', added => '2026-08-01T09:00:00-04:00' },
+], [ 'loose001' ],
+  albums => [ { slug => 'hidden', title => 'Hidden', photos => [ 'priv0001' ] } ]);
+
+subtest 'an album on the home page' => sub {
+  my (undef, $dir) = built_site(
+    photos => [ @TRIP ],
+    albums => [ { slug => 'berlin', title => 'Berlin', photos => [ 'trip0002', 'trip0001' ] } ],
+  );
+  my $home = $dir->child('index.html')->slurp_utf8;
+  like($home, qr{<li class="album"[^>]*><a href="/albums/berlin/" title="Berlin \(2 photos\)"><img src="/p/trip0002/h480\.webp"},
+    'a tile of its cover, linking to the album');
+  unlike($home, qr{href="/p/}, 'and not its photos');
 };
 
 done_testing;

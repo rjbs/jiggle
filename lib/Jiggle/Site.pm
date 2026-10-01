@@ -150,28 +150,46 @@ sub _instant ($datetime) {
   return $epoch;
 }
 
-=method recent_photos
+=method home_items
 
-  my @photos = $site->recent_photos($n);
+  my @items = $site->home_items($n);
 
-This returns the C<$n> most recently added photos, newest first, for the home
-page: uploading an old set after a new trip puts the old set first, so the
-home page always shows what's new.  Photos added at the same moment come
-newest taken first, and photos with no C<added_at> come last.
+This returns the C<$n> newest things for the home page, newest first: each a
+published album, which stands for its photos, or a public photo in no
+published album.  Each is a photo object or an album hash (as in
+L</albums>).
+
+A photo is dated by when it was added, and an album by when its newest photo
+was added (or, if none of its photos has a date, when it was created).  So
+adding photos to an old album brings it back to the top, and the home page
+changes whenever anything new arrives.  (The feed dates albums by creation
+instead, so as not to announce an album again.)  Photos added at the same
+moment come newest taken first, and anything with no date comes last.
 
 =cut
 
-sub recent_photos ($self, $n) {
-  my %when = map {; $_->id => scalar _instant($_->added_at) } $self->photos->@*;
+sub home_items ($self, $n) {
+  my %in_album = map {; my $a = $_; map {; $_->id => 1 } $a->{photos}->@* } $self->albums->@*;
+
+  my @items;
+  for my $album ($self->albums->@*) {
+    my ($when) = sort {; $b <=> $a } grep {; defined } map {; scalar _instant($_->added_at) } $album->{photos}->@*;
+    $when //= _instant($album->{created});
+    push @items, { when => $when, item => $album, taken => '', name => fc $album->{title} };
+  }
+  for my $photo (grep {; ! $in_album{ $_->id } } $self->photos->@*) {
+    push @items, { when => scalar _instant($photo->added_at), item => $photo,
+                   taken => $photo->taken // '', name => $photo->id };
+  }
 
   my @sorted = sort {;
-       (defined $when{ $b->id } <=> defined $when{ $a->id })
-    || (($when{ $b->id } // 0) <=> ($when{ $a->id } // 0))
-    || (($b->taken // '') cmp ($a->taken // ''))
-    || ($a->id cmp $b->id)
-  } $self->photos->@*;
+       (defined $b->{when} <=> defined $a->{when})
+    || (($b->{when} // 0) <=> ($a->{when} // 0))
+    || ($b->{taken} cmp $a->{taken})
+    || ($a->{name} cmp $b->{name})
+  } @items;
 
-  return List::Util::head($n, @sorted);
+  return map {; $_->{item} } List::Util::head($n, @sorted);
 }
 
 =method public_location
@@ -540,7 +558,7 @@ sub build ($self) {
 
   $self->_write_page('index.html', 'index', {
     title  => $self->site_title,
-    photos => [ $self->recent_photos(100) ],
+    items  => [ $self->home_items(100) ],
   });
 
   $self->_phase('photo pages',     sub { $self->_build_photo_pages(\@photos) });
