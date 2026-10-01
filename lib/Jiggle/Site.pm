@@ -554,7 +554,7 @@ sub render_page ($self, $template, $vars) {
   return $self->render('layout', {
     title   => $vars->{title},
     content => Mojo::ByteStream->new($content),
-    og      => ($vars->{photo} ? $self->opengraph($vars->{photo}) : undef),
+    og      => $vars->{og} // ($vars->{photo} ? $self->opengraph($vars->{photo}) : undef),
     map     => ($template eq 'map' || $vars->{location}) ? 1 : 0,
   });
 }
@@ -571,6 +571,31 @@ sub opengraph ($self, $photo) {
     video  => ($photo->is_video ? $self->_opengraph_video($photo) : undef),
   };
 }
+
+=method page_opengraph
+
+  my $og = $site->page_opengraph($title, $path, $photo, $description);
+
+This returns the OpenGraph data for a page that lists photos, like an album
+or the home page: its title and URL, a photo's preview image to stand for
+it, and a description.  It's undef if there's no photo to show.
+
+=cut
+
+sub page_opengraph ($self, $title, $path, $photo, $description = '') {
+  return undef unless $photo;
+  my ($w, $h) = $self->rendition_size($photo, 'og.jpg');
+  return {
+    title  => $title,
+    url    => $self->absolute_url($path),
+    image  => $self->absolute_url($self->rendition_url($photo, 'og.jpg')),
+    width  => $w,
+    height => $h,
+    description => $description,
+  };
+}
+
+sub _count ($n, $noun) { sprintf '%d %s%s', $n, $noun, $n == 1 ? '' : 's' }
 
 sub _opengraph_video ($self, $photo) {
   my ($w, $h) = $self->rendition_size($photo, 'video.mp4');
@@ -613,9 +638,14 @@ sub build ($self) {
   my $w = $self->writer;
   my @photos = $self->_phase('reading metadata', sub { $self->photos->@* });
 
+  my @home = $self->home_items(100);
+  my $lead = $home[0];
   $self->_write_page('index.html', 'index', {
     title  => $self->site_title,
-    items  => [ $self->home_items(100) ],
+    items  => \@home,
+    og     => $lead && $self->page_opengraph($self->site_title, '/',
+      (ref $lead eq 'HASH' ? $lead->{cover} : $lead),
+      'Recently added: ' . ($self->grid_caption($lead))[0]),
   });
 
   $self->_phase('photo pages',     sub { $self->_build_photo_pages(\@photos) });
@@ -755,27 +785,37 @@ sub embed_data ($self, $photo) {
 }
 
 sub _build_collections ($self) {
+  my $albums = $self->albums;
   $self->_write_page('albums/index.html', 'albums', {
     title  => 'Albums',
-    albums => $self->albums,
+    albums => $albums,
+    og     => $albums->@* && $self->page_opengraph('Albums', '/albums/', $albums->[0]{cover},
+      _count(0 + $albums->@*, 'album')),
   });
 
   for my $album ($self->albums->@*) {
     $self->_write_page("albums/$album->{slug}/index.html", 'album', {
       title => $album->{title},
       album => $album,
+      og    => $self->page_opengraph($album->{title}, "/albums/$album->{slug}/", $album->{cover},
+        $self->excerpt($self->description_text($album->{description} // ''))
+          || _count(0 + $album->{photos}->@*, 'photo')),
     });
   }
 
   $self->_write_page('tags/index.html', 'tags', {
     title => 'Tags',
     tags  => $self->tags,
+    og    => $self->page_opengraph('Tags', '/tags/', $self->photos->[0],
+      _count(0 + $self->tags->@*, 'tag')),
   });
 
   for my $tag ($self->tags->@*) {
     $self->_write_page("tags/$tag->{slug}/index.html", 'tag', {
       title => $tag->{name},
       tag   => $tag,
+      og    => $self->page_opengraph($tag->{name}, "/tags/$tag->{slug}/", $tag->{photos}[0],
+        _count(0 + $tag->{photos}->@*, 'photo') . " tagged $tag->{name}"),
     });
   }
 
@@ -1001,6 +1041,8 @@ sub _build_archive ($self) {
     title   => 'Archive',
     years   => \@years,
     undated => $archive->{undated},
+    og      => $self->page_opengraph('Archive', '/archive/', $self->photos->[0],
+      _count(0 + $self->photos->@*, 'photo')),
   });
 
   if ($archive->{undated}->@*) {
@@ -1017,6 +1059,8 @@ sub _build_archive ($self) {
     $self->_write_page("$year->{year}/index.html", 'year', {
       title => $year->{year},
       year  => $year,
+      og    => $self->page_opengraph($year->{year}, "/$year->{year}/", $year->{months}[0]{photos}[-1],
+        _count($year->{count}, 'photo')),
       newer => ($i > 0 ? $years[$i - 1] : undef),
       older => $years[$i + 1],
     });
@@ -1025,9 +1069,12 @@ sub _build_archive ($self) {
   my @months = $self->_all_months;
   for my $i (keys @months) {
     my $month = $months[$i];
+    my $title = $self->month_name($month->{month}) . " $month->{year}";
     $self->_write_page("$month->{year}/$month->{month}/index.html", 'month', {
-      title => $self->month_name($month->{month}) . " $month->{year}",
+      title => $title,
       month => $month,
+      og    => $self->page_opengraph($title, "/$month->{year}/$month->{month}/", $month->{photos}[-1],
+        _count(0 + $month->{photos}->@*, 'photo')),
       newer => ($i > 0 ? $months[$i - 1] : undef),
       older => $months[$i + 1],
     });

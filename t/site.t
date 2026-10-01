@@ -642,4 +642,44 @@ subtest 'no tooltips on grid tiles' => sub {
   unlike($dir->child('index.html')->slurp_utf8, qr{<a href="/p/[^"]+" title=}, 'the caption does that now');
 };
 
+# A page's OpenGraph properties, as { title => ..., image => ... }.
+sub og_of ($dir, $path) {
+  my $html = $dir->child($path)->slurp_utf8;
+  return { map {; $_->[0] => $_->[1] } map {; [ /property="og:(\w+)" content="([^"]*)"/ ] }
+           $html =~ /(<meta property="og:\w+" content="[^"]*">)/g };
+}
+
+sub page_og_is ($desc, $dir, $path, $want) {
+  my $og = og_of($dir, $path);
+  is_deeply({ map {; $_ => $og->{$_} } keys %$want }, $want, "og: $desc");
+}
+
+subtest 'pages that list photos have previews' => sub {
+  my (undef, $dir) = built_site(
+    config => qq{base_url = "https://photos.example.com"\n},
+    photos => [
+      { id => 'trip0001', title => 'Tram', taken => '2026-07-16T10:00:00', tags => [ 'vienna' ], added => '2026-07-20T09:00:00-04:00' },
+      { id => 'trip0002', title => 'Cake', taken => '2026-07-17T10:00:00', tags => [ 'vienna' ], added => '2026-07-20T09:00:01-04:00' },
+      { id => 'priv0001', title => 'Secret', taken => '2026-07-18T10:00:00', tags => [ 'vienna' ], visibility => 'private', added => '2026-07-21T09:00:00-04:00' },
+      { id => 'loose001', title => 'Newest', taken => '2026-09-01T10:00:00', added => '2026-09-02T09:00:00-04:00' },
+    ],
+    albums => [ { slug => 'vienna', title => 'Vienna, 2026-07', photos => [ 'priv0001', 'trip0002', 'trip0001' ] } ],
+  );
+
+  my $img = sub ($id) { "https://photos.example.com/p/$id/og.jpg" };
+
+  page_og_is('home', $dir, 'index.html',
+    { title => 'Photos', url => 'https://photos.example.com/', image => $img->('loose001'), description => 'Recently added: Newest' });
+  page_og_is('an album, by its cover', $dir, 'albums/vienna/index.html',
+    { title => 'Vienna, 2026-07', url => 'https://photos.example.com/albums/vienna/', image => $img->('trip0002'), description => '2 photos' });
+  page_og_is('albums', $dir, 'albums/index.html', { title => 'Albums', description => '1 album' });
+  page_og_is('a tag', $dir, 'tags/vienna/index.html',
+    { title => 'vienna', image => $img->('trip0002'), description => '2 photos tagged vienna' });
+  page_og_is('a month, by its newest', $dir, '2026/07/index.html',
+    { title => 'July 2026', image => $img->('trip0002'), description => '2 photos' });
+  page_og_is('a year', $dir, '2026/index.html', { image => $img->('loose001'), description => '3 photos' });
+  page_og_is('the archive', $dir, 'archive/index.html', { description => '3 photos' });
+  never_mentioned_ok('previews', $dir, 'priv0001');
+};
+
 done_testing;
