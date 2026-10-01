@@ -381,7 +381,7 @@ sub write_changes ($self, $request) {
       scalar keys %touched, join q{, }, sort keys %fields_changed;
     $message .= '; new album: ' . join q{, }, @new_titles if @new_titles;
     $message .= "\n\n$request->{note}" if ($request->{note} // '') =~ /\S/;
-    $commit = $self->_commit($message, map {; $_->{file} } @plan);
+    $commit = $self->library->commit_meta($message, map {; $_->{file} } @plan);
   }
 
   # The write is done (and committed) whether or not this works; a photo
@@ -457,27 +457,6 @@ sub _apply_change ($self, $attr, $field, $value) {
   }
 
   return;
-}
-
-# Commits the given files, and only those, returning the commit's abbreviated
-# id, or undef if meta/ isn't a git repository.  Naming the paths keeps
-# anything else already staged or changed in meta/ out of the commit.
-sub _commit ($self, $message, @files) {
-  my $meta = $self->library->meta_dir;
-  return undef unless -e $meta->child('.git');
-
-  my @paths = map {; $_->relative($meta)->stringify } @files;
-  _git($meta, 'add', '--', @paths);
-  _git($meta, 'commit', '--quiet', '-m', $message, '--', @paths);
-  chomp(my $id = _git($meta, 'rev-parse', '--short', 'HEAD'));
-  return $id;
-}
-
-sub _git ($dir, @args) {
-  open my $fh, '-|', 'git', '-C', "$dir", @args or die "can't run git: $!";
-  my $out = do { local $/; <$fh> } // '';
-  close $fh or die "git @args failed\n";
-  return $out;
 }
 
 # One photo, as the page gets it, read from its file now.

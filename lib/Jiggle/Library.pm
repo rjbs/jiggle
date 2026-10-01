@@ -224,6 +224,35 @@ has _albums => (
 
 sub albums ($self) { $self->_albums->@* }
 
+=method commit_meta
+
+  my $commit = $library->commit_meta($message, @files);
+
+This commits the given files in F<meta>, and only those, returning the new
+commit's abbreviated id, or undef if F<meta> isn't a git repository.  A file
+that's been deleted is committed as deleted.  Naming the paths keeps anything
+else already staged or changed in F<meta> out of the commit.
+
+=cut
+
+sub commit_meta ($self, $message, @files) {
+  my $meta = $self->meta_dir;
+  return undef unless -e $meta->child('.git');
+
+  my @paths = map {; Path::Tiny::path($_)->relative($meta)->stringify } @files;
+  _git($meta, 'add', '--', @paths);
+  _git($meta, 'commit', '--quiet', '-m', $message, '--', @paths);
+  chomp(my $id = _git($meta, 'rev-parse', '--short', 'HEAD'));
+  return $id;
+}
+
+sub _git ($dir, @args) {
+  open my $fh, '-|', 'git', '-C', "$dir", @args or die "can't run git: $!";
+  my $out = do { local $/; <$fh> } // '';
+  close $fh or die "git @args failed\n";
+  return $out;
+}
+
 =method add_photo
 
   $library->add_photo($photo);
