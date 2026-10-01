@@ -173,8 +173,7 @@ sub home_items ($self, $n) {
 
   my @items;
   for my $album ($self->albums->@*) {
-    my ($when) = sort {; $b <=> $a } grep {; defined } map {; scalar _instant($_->added_at) } $album->{photos}->@*;
-    $when //= _instant($album->{created});
+    my $when = _instant($self->album_added($album)) // _instant($album->{created});
     push @items, { when => $when, item => $album, taken => '', name => fc $album->{title} };
   }
   for my $photo (grep {; ! $in_album{ $_->id } } $self->photos->@*) {
@@ -417,6 +416,63 @@ sub display_date ($self, $photo) {
 sub display_title ($self, $photo) {
   return $photo->title if length $photo->title;
   return $self->display_date($photo) || 'Untitled';
+}
+
+=method grid_caption
+
+  my ($name, $details) = $site->grid_caption($item);
+
+This returns the caption shown over a grid tile (a photo, or an album hash)
+when it's hovered: its title, and a line of details, like "48 photos, added
+30 September 2026" or "1:42, added 30 September 2026".
+
+=cut
+
+sub grid_caption ($self, $item) {
+  my @details;
+  my $added;
+
+  if (ref $item eq 'HASH') {
+    my $n = scalar $item->{photos}->@*;
+    push @details, sprintf '%d photo%s', $n, $n == 1 ? '' : 's';
+    $added = $self->album_added($item);
+  } else {
+    push @details, $self->display_duration($item->duration) if $item->is_video and $item->duration;
+    $added = $item->added_at;
+  }
+
+  my $day = $self->display_day($added);
+  push @details, "added $day" if length $day;
+
+  my $name = ref $item eq 'HASH' ? $item->{title} : $self->display_title($item);
+  return ($name, join q{, }, @details);
+}
+
+=method album_added
+
+This returns when an album's newest photo was added, as a datetime, or undef if
+none of them has a date.
+
+=cut
+
+sub album_added ($self, $album) {
+  my ($newest) = sort {; $b->[0] <=> $a->[0] }
+                 grep {; defined $_->[0] }
+                 map  {; [ scalar _instant($_->added_at), $_->added_at ] } $album->{photos}->@*;
+  return $newest ? $newest->[1] : undef;
+}
+
+# "30 September 2026", from a datetime; empty if it isn't one.
+sub display_day ($self, $datetime) {
+  my ($y, $m, $d) = ($datetime // '') =~ /\A(\d{4})-(\d\d)-(\d\d)/ or return '';
+  return sprintf '%d %s %d', $d, $MONTHS[$m - 1], $y;
+}
+
+# "0:42", or "1:02:03", from seconds.
+sub display_duration ($self, $seconds) {
+  my $s = int($seconds + 0.5);
+  my ($h, $m) = (int($s / 3600), int($s % 3600 / 60));
+  return $h ? sprintf('%d:%02d:%02d', $h, $m, $s % 60) : sprintf('%d:%02d', $m, $s % 60);
 }
 
 =method description_html

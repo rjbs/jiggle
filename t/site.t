@@ -612,9 +612,34 @@ subtest 'an album on the home page' => sub {
     albums => [ { slug => 'berlin', title => 'Berlin', photos => [ 'trip0002', 'trip0001' ] } ],
   );
   my $home = $dir->child('index.html')->slurp_utf8;
-  like($home, qr{<li class="album"[^>]*><a href="/albums/berlin/" title="Berlin \(2 photos\)"><img src="/p/trip0002/h480\.webp"},
+  like($home, qr{<li class="album"[^>]*><a href="/albums/berlin/"><img src="/p/trip0002/h480\.webp"},
     'a tile of its cover, linking to the album');
+  like($home, qr{<span class="name">Berlin</span><span class="details">2 photos, added 20 July 2026</span>},
+    'captioned with its count, and when its newest photo was added');
   unlike($home, qr{href="/p/}, 'and not its photos');
+};
+
+sub caption_is ($desc, $spec, $want_name, $want_details) {
+  my ($library) = library_with(photos => [ { id => 'capt0001', %$spec } ]);
+  my $site = Jiggle::Site->new({ library => $library });
+  my ($name, $details) = $site->grid_caption($library->photo('capt0001'));
+  is_deeply([ $name, $details ], [ $want_name, $want_details ], "caption: $desc");
+}
+
+caption_is('a photo', { title => 'Stephansdom', added => '2026-07-20T09:00:00+02:00' },
+  'Stephansdom', 'added 20 July 2026');
+caption_is('untitled, so by date taken', { taken => '2026-07-16T19:18:15', added => '2026-07-20T09:00:00+02:00' },
+  '16 July 2026, 19:18', 'added 20 July 2026');
+caption_is('a video', { type => 'video', title => 'Rocky', added => '2026-08-01T09:00:00-04:00',
+    original => { file => 'v.mp4', ext => 'mp4', sha256 => 'f' x 64, bytes => 1, width => 1920, height => 1080, duration => 102.4 } },
+  'Rocky', '1:42, added 1 August 2026');
+caption_is('a long video, never added', { type => 'video', title => 'Talk',
+    original => { file => 'v.mp4', ext => 'mp4', sha256 => 'f' x 64, bytes => 1, width => 1920, height => 1080, duration => 3723 } },
+  'Talk', '1:02:03');
+
+subtest 'no tooltips on grid tiles' => sub {
+  my (undef, $dir) = built_site(photos => [ { id => 'tool0001', title => 'Hover me' } ]);
+  unlike($dir->child('index.html')->slurp_utf8, qr{<a href="/p/[^"]+" title=}, 'the caption does that now');
 };
 
 done_testing;
