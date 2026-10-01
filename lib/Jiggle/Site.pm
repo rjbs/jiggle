@@ -3,6 +3,7 @@ use v5.36;
 
 use Moo;
 
+use Jiggle ();
 use Jiggle::Markdown ();
 use Encode ();
 use HTML::Entities ();
@@ -51,7 +52,7 @@ has out_dir => (
 
 has share_dir => (
   is => 'lazy',
-  default => sub { Path::Tiny::path(__FILE__)->absolute->parent(3)->child('share') },
+  default => sub { Jiggle->share_dir },
 );
 
 has logger => (is => 'ro', default => sub { sub { } });

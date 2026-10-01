@@ -1,6 +1,18 @@
 package Jiggle;
 use v5.36;
 
+use File::ShareDir ();
+use Path::Tiny ();
+
+# In a checkout, share/ is beside lib/; installed, it's wherever
+# File::ShareDir put it.  The checkout wins, so a working copy uses its own
+# templates even when another jiggle is installed.  -- claude, 2026-09-30
+sub share_dir ($class) {
+  my $here = Path::Tiny::path(__FILE__)->absolute->parent(2)->child('share');
+  return $here if -d $here->child('templates');
+  return Path::Tiny::path(File::ShareDir::dist_dir('Jiggle'));
+}
+
 1;
 
 =head1 NAME
@@ -17,6 +29,14 @@ site from it.
 
 See F<PLAN.md> in the distribution for the design, and F<STORAGE.md> for the
 library's layout.
+
+=head1 METHODS
+
+=head2 share_dir
+
+This returns the directory of jiggle's templates, stylesheets, scripts, and
+editor: F<share> in a checkout, or the installed distribution's share
+directory.
 
 =head1 THE NAME
 

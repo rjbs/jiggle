@@ -4,6 +4,7 @@ use v5.36;
 use Moo;
 
 use Digest::SHA ();
+use Jiggle ();
 use Jiggle::Derive;
 use Jiggle::Album;
 use Jiggle::Photo;
@@ -64,7 +65,7 @@ has derive => (
 
 has share_dir => (
   is => 'ro',
-  default => sub { Path::Tiny::path(__FILE__)->absolute->parent(3)->child('share') },
+  default => sub { Jiggle->share_dir },
 );
 
 my $COOKIE = 'jiggle_editor';

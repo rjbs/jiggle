@@ -18,6 +18,7 @@ requires 'List::Util', '1.50';
 requires 'Mojolicious', '9';
 requires 'Moo', '2';
 requires 'Parallel::ForkManager';
+requires 'File::ShareDir';
 requires 'Path::Tiny';
 requires 'TOML::Tiny', '0.20';
 
