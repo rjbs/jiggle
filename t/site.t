@@ -656,7 +656,7 @@ sub page_og_is ($desc, $dir, $path, $want) {
 
 subtest 'pages that list photos have previews' => sub {
   my (undef, $dir) = built_site(
-    config => qq{base_url = "https://photos.example.com"\n},
+    config => qq{base_url = "https://photos.example.com"\ntitle = "rjbs's photos"\n},
     photos => [
       { id => 'trip0001', title => 'Tram', taken => '2026-07-16T10:00:00', tags => [ 'vienna' ], added => '2026-07-20T09:00:00-04:00' },
       { id => 'trip0002', title => 'Cake', taken => '2026-07-17T10:00:00', tags => [ 'vienna' ], added => '2026-07-20T09:00:01-04:00' },
@@ -669,7 +669,7 @@ subtest 'pages that list photos have previews' => sub {
   my $img = sub ($id) { "https://photos.example.com/p/$id/og.jpg" };
 
   page_og_is('home', $dir, 'index.html',
-    { title => 'Photos', url => 'https://photos.example.com/', image => $img->('loose001'), description => 'Recently added: Newest' });
+    { title => "rjbs's photos", url => 'https://photos.example.com/', image => $img->('loose001'), description => 'Recently added: Newest' });
   page_og_is('an album, by its cover', $dir, 'albums/vienna/index.html',
     { title => 'Vienna, 2026-07', url => 'https://photos.example.com/albums/vienna/', image => $img->('trip0002'), description => '2 photos' });
   page_og_is('albums', $dir, 'albums/index.html', { title => 'Albums', description => '1 album' });
@@ -679,6 +679,7 @@ subtest 'pages that list photos have previews' => sub {
     { title => 'July 2026', image => $img->('trip0002'), description => '2 photos' });
   page_og_is('a year', $dir, '2026/index.html', { image => $img->('loose001'), description => '3 photos' });
   page_og_is('the archive', $dir, 'archive/index.html', { description => '3 photos' });
+  like($dir->child('index.html')->slurp_utf8, qr{<meta property="og:site_name" content="rjbs's photos">}, 'an apostrophe left as it is');
   never_mentioned_ok('previews', $dir, 'priv0001');
 };
 

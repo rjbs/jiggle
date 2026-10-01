@@ -10,8 +10,8 @@
 <script src="/static/jiggle-keys.js" defer></script>
 % if ($og) {
 <meta property="og:type" content="<%= $og->{video} ? 'video.other' : 'website' %>">
-<meta property="og:site_name" content="<%= $site->site_title %>">
-<meta property="og:title" content="<%= $og->{title} %>">
+<meta property="og:site_name" content="<%== $site->attr_text($site->site_title) %>">
+<meta property="og:title" content="<%== $site->attr_text($og->{title}) %>">
 <meta property="og:url" content="<%= $og->{url} %>">
 <meta property="og:image" content="<%= $og->{image} %>">
 <meta property="og:image:width" content="<%= $og->{width} %>">
@@ -23,8 +23,8 @@
 <meta property="og:video:height" content="<%= $v->{height} %>">
 %   }
 %   if (length $og->{description}) {
-<meta property="og:description" content="<%= $og->{description} %>">
-<meta name="description" content="<%= $og->{description} %>">
+<meta property="og:description" content="<%== $site->attr_text($og->{description}) %>">
+<meta name="description" content="<%== $site->attr_text($og->{description}) %>">
 %   }
 <meta name="twitter:card" content="summary_large_image">
 % }
