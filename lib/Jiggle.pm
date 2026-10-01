@@ -1,8 +1,6 @@
 package Jiggle;
 use v5.36;
 
-our $VERSION = '0.001';
-
 1;
 
 =head1 NAME
