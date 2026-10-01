@@ -184,6 +184,24 @@ sub _set_entry ($self, $id, $entry) {
   $self->_manifest_dirty(1);
 }
 
+=method forget
+
+  $derive->forget($id);
+
+This deletes a photo's renditions and drops it from the manifest, for a
+photo removed from the library.  The manifest is written by
+L</save_manifest>.
+
+=cut
+
+sub forget ($self, $id) {
+  my $dir = $self->library->derived_path($id);
+  $dir->remove_tree if -d $dir;
+  if (delete $self->_manifest->{$id}) {
+    $self->_manifest_dirty(1);
+  }
+}
+
 =method save_manifest
 
 This writes the manifest, if it's changed, replacing the file atomically so

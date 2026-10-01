@@ -54,6 +54,10 @@ forward.  `jiggle init DIR` makes a new library at the current format.
 - **Originals are never modified**, not even to add metadata.  They're
   read-only on disk.  Replacing an original's bytes makes a *new* photo with a
   new id.
+- `jiggle remove ID` deletes a photo's metadata and renditions and takes it
+  out of its albums, as one commit in `meta/`, but keeps its original, so
+  reverting the commit undoes it.  An original with no metadata is a removed
+  photo.  `--remove-original` deletes the original too.
 - The extension comes from the file's content, not its name: `jpg`, `png`,
   `heic`, `webp`, `gif`, `mov`, `mp4`, `m4v`, or `avi`.
 - On macOS, ingest clones originals (`cp -c`) when the source is on the same
