@@ -481,9 +481,11 @@ function rotateField(photos) {
 // yet written are shown struck through, so they can be put back.
 //
 // labelOf gives a member's text, and resolve turns what was typed into a
-// member, or null.  With split, what's typed is split at commas into several:
+// member, or null.  isNew says whether a member is one made here and not yet
+// written, which is marked by CSS, so that copying the chip's text copies
+// only the name.  With split, what's typed is split at commas into several:
 // tags can't contain commas, but album titles often do.
-function setField(photos, { name, field, labelOf = (v) => v, resolve, placeholder, list, split = false }) {
+function setField(photos, { name, field, labelOf = (v) => v, isNew = () => false, resolve, placeholder, list, split = false }) {
   const control = el("div");
   const node = fieldFrame(name, photos, field, control);
   const n = photos.length;
@@ -521,7 +523,7 @@ function setField(photos, { name, field, labelOf = (v) => v, resolve, placeholde
       }
       const c = counts.get(v);
       const partial = c < n;
-      return el("span", { class: `chip${partial ? " partial" : ""}${added(v) ? " added" : ""}` },
+      return el("span", { class: `chip${partial ? " partial" : ""}${added(v) ? " added" : ""}${isNew(v) ? " new" : ""}` },
         labelOf(v),
         n > 1
           ? el("button", { type: "button", class: "count", text: `${c}/${n}`,
@@ -574,7 +576,8 @@ function albumTitle(slug) {
 function albumsField(photos) {
   return setField(photos, {
     name: "Albums", field: "albums", placeholder: "add to an album", list: "all-albums",
-    labelOf: (slug) => state.newAlbums.has(slug) ? `${albumTitle(slug)} (new)` : albumTitle(slug),
+    labelOf: albumTitle,
+    isNew: (slug) => state.newAlbums.has(slug),
     resolve: (text) => {
       if (text === "") return null;
       const lc = text.toLowerCase();

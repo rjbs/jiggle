@@ -142,6 +142,8 @@ button.primary:not(:disabled) { background: var(--accent); border-color: var(--a
 .chip button.count:not(:disabled):hover { color: var(--fg); text-decoration: underline; }
 .chip button.count:disabled { opacity: 1; }
 .chip.added { border-color: var(--dirty); }
+.chip > button { order: 2; }
+.chip.new::after { order: 1; content: "new"; font-size: 10px; font-weight: 600; color: var(--dirty); text-transform: uppercase; }
 .chip.removed { text-decoration: line-through; opacity: 0.6; border-color: var(--dirty); }
 .chip button { border: 0; padding: 0 4px; background: none; color: var(--muted); }
 .chip button:hover { color: var(--fg); }
