@@ -46,6 +46,9 @@ path in the record and not the manifest is deleted.  The record is updated
 as each upload or deletion succeeds, so an interrupted sync picks up where
 it stopped.  Anything put in the zone by other means is left alone.
 
+Bunny serves F<bunnycdn_errors/404.html> for a missing path, so the site's
+F<404.html> is uploaded there too.
+
 Every deletion waits until every upload has succeeded, so the live site
 never links to something already gone.  If any upload fails, nothing is
 deleted.
@@ -111,9 +114,18 @@ paths that need deleting, each sorted.
 
 =cut
 
+# Remote paths that get a copy of some other file in the site.
+my %COPY_OF = ('bunnycdn_errors/404.html' => '404.html');
+
+sub _source ($self, $rel) { $self->site_dir->child($COPY_OF{$rel} // $rel) }
+
 sub plan ($self) {
   my $want = $self->_load($self->_manifest_file);
   my $have = $self->_record;
+
+  for my $copy (keys %COPY_OF) {
+    $want->{$copy} = $want->{ $COPY_OF{$copy} } if $want->{ $COPY_OF{$copy} };
+  }
 
   my @upload = grep {;
     ! $have->{$_} or $JSON->encode($have->{$_}) ne $JSON->encode($want->{$_})
@@ -231,7 +243,7 @@ sub _checked_p ($self, $tx_p, $what) {
 }
 
 sub _upload_p ($self, $rel) {
-  my $file = $self->site_dir->child($rel);
+  my $file = $self->_source($rel);
 
   # The checksum makes Bunny refuse an upload that arrives damaged.
   my $tx = $self->ua->build_tx(PUT => $self->_storage_url($rel), {

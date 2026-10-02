@@ -186,12 +186,26 @@ sync_ok('the next sync does only what is left', \%v3,
   },
 );
 
+my %v4 = (%v3, '404.html' => 'not found');
+
+sync_ok('the 404 page is uploaded where Bunny looks for it, too', \%v4,
+  {
+    uploaded => [ '404.html', 'bunnycdn_errors/404.html' ],
+    deleted  => [],
+    purged   => [
+      'https://photos.example.com/404.html',
+      'https://photos.example.com/bunnycdn_errors/404.html',
+    ],
+    stored => { %v4, 'bunnycdn_errors/404.html' => 'not found' },
+  },
+);
+
 subtest 'a file put in the zone some other way is left alone' => sub {
-  $stored{'bunnycdn_errors/404.html'} = 'not found';
-  build_site(\%v3);
+  $stored{'from-the-dashboard.txt'} = 'hello';
+  build_site(\%v4);
   my $result = syncer()->sync;
   is_deeply($result->{deleted}, [], 'not deleted');
-  ok(exists $stored{'bunnycdn_errors/404.html'}, '...and still there');
+  ok(exists $stored{'from-the-dashboard.txt'}, '...and still there');
 };
 
 done_testing;

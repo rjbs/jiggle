@@ -287,8 +287,9 @@ rendition, as an absolute URL), and `og:url`.
 * a Bunny storage zone behind a pull zone, served at a custom hostname by
   CNAME, through Bunny's storage API
 
-Bunny serves a directory's `index.html` at `dir/` and `dir`, and our 404 page
-for a missing path, so the site needs no rewriting.  Nothing is compared
+Bunny serves a directory's `index.html` at `dir/` and `dir`, and, for a
+missing path, `bunnycdn_errors/404.html`, where sync puts a copy of our 404
+page; so the site needs no rewriting.  Nothing is compared
 remotely: the build's site manifest is diffed against a record (in
 `.jiggle/`) of what was last uploaded, so a typical sync uploads the new
 photos and the handful of index pages that list them.  Uploads go first,
