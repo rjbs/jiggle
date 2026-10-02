@@ -174,11 +174,16 @@ zones or with private locations, and every published location is rounded.
 
 **Committed once shared:** the URLs.
 
-    /p/<id>/                 a photo, and its renditions: /p/<id>/1024.webp
+    /p/<id>/                 a photo's page, and /p/<id>/embed.json
     /albums/<slug>/
     /tags/<tag slug>/
     /<year>/  /<year>/<month>/  /archive/
     /map/  /search/  /feed.xml
+
+Renditions (`/img/<id>/1024.webp`) are found through `embed.json` and the
+pages, not promised.  They moved once, out of `/p/<id>/` on 2026-10-02, so
+that the CDN's cache of pages can be purged by prefix without purging the
+renditions.
 
 ## `.jiggle/`
 

@@ -188,7 +188,8 @@ are never linked into `site/`.
 ### Pages
 
 * `/` — recent photos
-* `/p/<id>/` — photo page: large image with `srcset`, title, description,
+* `/p/<id>/` — photo page (its renditions are under `/img/<id>/`): large
+  image with `srcset`, title, description,
   date, tags, albums, small map, OpenGraph tags
 * `/albums/` and `/albums/<slug>/`
 * `/tags/` and `/tags/<tag>/`

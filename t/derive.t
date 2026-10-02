@@ -169,7 +169,7 @@ subtest 'a remade rendition is relinked in the site' => sub {
   my ($library, $photo) = derived_library(jpeg_with_gps(), 0);
 
   Jiggle::Site->new({ library => $library })->build;
-  my $published = $library->root->child('site', 'p', $photo->id, '1024.webp');
+  my $published = $library->root->child('site', 'img', $photo->id, '1024.webp');
   my $derived   = $library->derived_path($photo->id, '1024.webp');
   is((stat $published)[1], (stat $derived)[1], 'published file is the rendition');
 

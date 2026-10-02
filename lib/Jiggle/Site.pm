@@ -392,7 +392,10 @@ sub month_of ($self, $photo) {
 
 sub photo_url ($self, $photo) { '/p/' . $photo->id . '/' }
 
-sub rendition_url ($self, $photo, $name) { '/p/' . $photo->id . "/$name" }
+# Renditions live apart from pages, so that the CDN's cache of pages can be
+# purged by prefix without purging the renditions, which rarely change.
+# -- claude, 2026-10-02
+sub rendition_url ($self, $photo, $name) { '/img/' . $photo->id . "/$name" }
 
 sub absolute_url ($self, $path) { $self->base_url . $path }
 
@@ -735,7 +738,7 @@ sub _build_photo_pages ($self, $photos) {
 
     for my $recipe (Jiggle::Derive->published_recipes_for($photo)) {
       my $source = $self->library->derived_path($id, $recipe->{name});
-      $w->link_file("p/$id/$recipe->{name}", $source,
+      $w->link_file($self->rendition_url($photo, $recipe->{name}) =~ s{\A/}{}r, $source,
         $self->derive->rendition_key($photo, $recipe->{name}) // '');
     }
 

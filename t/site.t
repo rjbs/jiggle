@@ -24,6 +24,7 @@ sub never_mentioned_ok ($desc, $dir, $needle) {
   my @hits = grep {; $dir->child($_)->slurp_raw =~ /\Q$needle/ } site_files($dir);
   is_deeply(\@hits, [], "$desc: no published file mentions $needle");
   ok(! -e $dir->child("p/$needle"), "$desc: no directory for $needle");
+  ok(! -e $dir->child("img/$needle"), "$desc: no renditions for $needle");
 }
 
 sub location_published_is ($desc, $site, $photo, $want) {
@@ -218,7 +219,7 @@ subtest 'embed data for other sites' => sub {
   is($embed->{alt},   'red and blue switches', 'alt text is the title');
   is($embed->{url},   'https://photos.example.com/p/hhhh0001/', 'absolute page URL');
   is_deeply($embed->{renditions}{'1024.webp'},
-    { url => 'https://photos.example.com/p/hhhh0001/1024.webp', width => 1024, height => 768 },
+    { url => 'https://photos.example.com/img/hhhh0001/1024.webp', width => 1024, height => 768 },
     'a rendition, with its size');
   is($embed->{video}, undef, 'a photo has no video');
   unlike($dir->child('p/hhhh0001/embed.json')->slurp_raw, qr/40\.62|-75\.37/, 'no location');
@@ -228,7 +229,7 @@ subtest 'embed data for other sites' => sub {
   my $video = embed_of($dir, 'hhhh0003');
   is($video->{type}, 'video', 'a video says so');
   is_deeply($video->{video},
-    { url => 'https://photos.example.com/p/hhhh0003/video.mp4', width => 1080, height => 1920 },
+    { url => 'https://photos.example.com/img/hhhh0003/video.mp4', width => 1080, height => 1920 },
     '...and has its video');
 
   is(embed_of($dir, 'hhhh0004'), undef, 'a private photo has no embed data');
@@ -277,7 +278,7 @@ subtest 'the feed' => sub {
 
   my $xml = $dir->child('feed.xml')->slurp_utf8;
   like($xml, qr{<category term="high-st"/>}, 'tags are categories');
-  like($xml, qr{https://photos\.example\.com/p/iiii0002/1024\.webp}, 'a photo entry shows the photo');
+  like($xml, qr{https://photos\.example\.com/img/iiii0002/1024\.webp}, 'a photo entry shows the photo');
   unlike($xml, qr/secret|iiii0005/, 'nothing of the private photo');
   unlike($xml, qr/40\.62|-75\.37/, 'no location');
   like($dir->child('index.html')->slurp_utf8, qr{<link rel="alternate" type="application/atom\+xml" href="/feed\.xml"},
@@ -612,7 +613,7 @@ subtest 'an album on the home page' => sub {
     albums => [ { slug => 'berlin', title => 'Berlin', photos => [ 'trip0002', 'trip0001' ] } ],
   );
   my $home = $dir->child('index.html')->slurp_utf8;
-  like($home, qr{<li class="album"[^>]*><a href="/albums/berlin/"><img src="/p/trip0002/h480\.webp"},
+  like($home, qr{<li class="album"[^>]*><a href="/albums/berlin/"><img src="/img/trip0002/h480\.webp"},
     'a tile of its cover, linking to the album');
   like($home, qr{<span class="name">Berlin</span><span class="details">2 photos, added 20 July 2026</span>},
     'captioned with its count, and when its newest photo was added');
@@ -666,7 +667,7 @@ subtest 'pages that list photos have previews' => sub {
     albums => [ { slug => 'vienna', title => 'Vienna, 2026-07', photos => [ 'priv0001', 'trip0002', 'trip0001' ] } ],
   );
 
-  my $img = sub ($id) { "https://photos.example.com/p/$id/og.jpg" };
+  my $img = sub ($id) { "https://photos.example.com/img/$id/og.jpg" };
 
   page_og_is('home', $dir, 'index.html',
     { title => "rjbs's photos", url => 'https://photos.example.com/', image => $img->('loose001'), description => 'Recently added: Newest' });
