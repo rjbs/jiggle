@@ -20,7 +20,7 @@ sub description {
     zone         = "my-photos"
     storage_url  = "https://ny.storage.bunnycdn.com"  # by the zone's region
     pull_zone_id = 12345
-    purge_hosts  = [ "photos.example.com" ]  # default: base_url's host
+    # purge_hosts = [ "photos.example.com" ]  # default: the pull zone's
 
   Bunny needs two secrets, the storage zone's password and the account's
   API key (for purging the CDN's cache).  They're read from the
@@ -105,7 +105,6 @@ sub _rsync ($self, $opt, $publish, $site) {
 
 sub _bunny ($self, $opt, $config, $site) {
   require Jiggle::Sync::Bunny;
-  require Mojo::URL;
 
   my $library = $self->library;
 
@@ -124,18 +123,12 @@ sub _bunny ($self, $opt, $config, $site) {
     die "no $key in [publish.bunny]; see: jiggle help sync\n" unless length($config->{$key} // '');
   }
 
-  my $hosts = $config->{purge_hosts} // do {
-    my $host = Mojo::URL->new($library->config->{base_url} // '')->host;
-    die "no purge_hosts in [publish.bunny], and no base_url to take one from\n" unless $host;
-    [ $host ];
-  };
-
   my $sync = Jiggle::Sync::Bunny->new({
     site_dir     => $site,
     state_dir    => $library->state_dir,
     zone         => $config->{zone},
     pull_zone_id => $config->{pull_zone_id},
-    purge_hosts  => $hosts,
+    ($config->{purge_hosts} ? (purge_hosts => $config->{purge_hosts}) : ()),
     ($config->{storage_url} ? (storage_url => $config->{storage_url}) : ()),
     %secret,
     logger => $self->logger,

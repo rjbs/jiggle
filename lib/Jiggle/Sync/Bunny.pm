@@ -27,7 +27,6 @@ Jiggle::Sync::Bunny - publish the site to a Bunny storage zone, and purge its CD
     storage_url  => 'https://ny.storage.bunnycdn.com',
     api_key      => $account_api_key,
     pull_zone_id => 12345,
-    purge_hosts  => [ 'photos.example.com' ],
   });
 
   my $result = $sync->sync;
@@ -54,7 +53,7 @@ never links to something already gone.  If any upload fails, nothing is
 deleted.
 
 Then the CDN's cache is purged of every URL changed or deleted, on each of
-C<purge_hosts>.  That's required, not just tidy: a rendition's URL stays the
+the pull zone's hostnames (or C<purge_hosts>, if given).  That's required, not just tidy: a rendition's URL stays the
 same when it's remade (say, rotated), and a photo made private must stop
 being served from the cache, not just from storage.
 
@@ -83,7 +82,28 @@ has storage_url => (is => 'ro', default => 'https://storage.bunnycdn.com');
 
 has api_key      => (is => 'ro', required => 1);
 has pull_zone_id => (is => 'ro', required => 1);
-has purge_hosts  => (is => 'ro', required => 1);
+# Bunny refuses (with a 404) to purge a URL on a hostname that isn't the
+# pull zone's, so by default the hostnames come from the pull zone itself.
+# Its record also holds certificate keys, so it's never logged.
+# -- claude, 2026-10-02
+has purge_hosts => (
+  is => 'lazy',
+  default => sub ($self) {
+    my (@hosts, $error);
+    $self->ua->get_p($self->api_url . '/pullzone/' . $self->pull_zone_id, { AccessKey => $self->api_key })
+      ->then(sub ($tx) {
+        my $res = $tx->result;
+        die sprintf "%s %s\n", $res->code, $res->message unless $res->is_success;
+        @hosts = map {; $_->{Value} } ($res->json->{Hostnames} // [])->@*;
+      })
+      ->catch(sub ($e) { $error = $e })
+      ->wait;
+
+    die "can't get the pull zone's hostnames: $error" if $error;
+    die "the pull zone has no hostnames\n" unless @hosts;
+    return [ sort @hosts ];
+  },
+);
 has api_url      => (is => 'ro', default => 'https://api.bunny.net');
 
 has concurrency    => (is => 'ro', default => 8);
@@ -361,7 +381,8 @@ sub _purge_p ($self, $api, $tries = 1) {
       return Mojo::Promise->timer($wait)->then(sub { $self->_purge_p($api, $tries + 1) });
     }
 
-    return Mojo::Promise->reject(sprintf 'purge: %s %s', $res->code, $res->message);
+    return Mojo::Promise->reject(sprintf 'purge: %s %s%s', $res->code, $res->message,
+      $res->code == 404 ? " (is the URL's hostname one of the pull zone's?)" : '');
   });
 }
 

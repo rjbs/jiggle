@@ -14,8 +14,10 @@ use Path::Tiny ();
 # A fake Bunny: the storage API, which checks the password and checksum of
 # each upload, and the purge API, which records what it was asked to purge.
 # Paths in %fail always get a 500, and the next $limited purge requests get
-# a 429.  -- claude, 2026-10-01
+# a 429.  It refuses, as Bunny does, to purge URLs on hostnames that aren't
+# the pull zone's.  -- claude, 2026-10-01
 my (%stored, @purged, %fail, $limited);
+our @hostnames = ('photos.example.com');
 
 app->log->level('fatal');
 
@@ -50,9 +52,16 @@ post '/purge' => sub ($c) {
   }
 
   my $url = $c->param('url');
+  return $c->render(text => 'no such pull zone', status => 404)
+    unless grep {; $url =~ m{\Ahttps://\Q$_\E/} } @hostnames;
+
   my $prefix = $url =~ m{/\z} && ($c->param('exactPath') // '') ne 'true';
   push @purged, ($prefix ? 'prefix ' : 'exact ') . $url;
   $c->rendered(204);
+};
+
+get '/pullzone/77' => sub ($c) {
+  $c->render(json => { Id => 77, Hostnames => [ map {; { Value => $_, CertificateKey => 'secret' } } @hostnames ] });
 };
 
 post '/pullzone/77/purgeCache' => sub ($c) {
@@ -90,7 +99,6 @@ sub syncer (%arg) {
     api_key      => 'key',
     pull_zone_id => 77,
     api_url      => $base,
-    purge_hosts  => [ 'photos.example.com' ],
     prefix_over  => 2,
     retry_delay  => 0,
     ua           => $ua,
@@ -250,9 +258,28 @@ sync_ok('purging everything, on request', \%v5,
   purge_all => 1,
 );
 
+subtest "purges are made on every one of the pull zone's hostnames" => sub {
+  local @hostnames = ('photos.example.com', 'jiggle.b-cdn.net');
+  build_site({ %v5, 'feed.xml' => 'new' });
+  @purged = ();
+  syncer()->sync;
+  is_deeply([ sort @purged ], [ 'exact https://jiggle.b-cdn.net/feed.xml', exact('/feed.xml') ], 'both');
+};
+
+subtest 'a purge on a hostname not the pull zone\'s fails, saying so' => sub {
+  build_site({ %v5, 'feed.xml' => 'newer' });
+  my @log;
+  my $ok = eval {
+    syncer(purge_hosts => [ 'elsewhere.example.com' ], logger => sub ($m) { push @log, $m })->sync;
+    1;
+  };
+  like($ok ? '' : $@, qr{purge.*failed}, 'it dies');
+  like(join("\n", @log), qr{404.*hostname one of the pull zone's}, '...having said why');
+};
+
 subtest 'a file put in the zone some other way is left alone' => sub {
   $stored{'from-the-dashboard.txt'} = 'hello';
-  build_site(\%v5);
+  build_site({ %v5, 'feed.xml' => 'newer' });
   my $result = syncer()->sync;
   is_deeply($result->{deleted}, [], 'not deleted');
   ok(exists $stored{'from-the-dashboard.txt'}, '...and still there');
