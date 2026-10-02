@@ -56,11 +56,21 @@ deleted.
 Then the CDN's cache is purged of every URL changed or deleted, on each of
 C<purge_hosts>.  That's required, not just tidy: a rendition's URL stays the
 same when it's remade (say, rotated), and a photo made private must stop
-being served from the cache, not just from storage.  A directory's
-F<index.html> is served at three URLs (C<dir/>, C<dir>, and
-C<dir/index.html>), and all three are purged.  When more than
-C<purge_all_over> files changed, the whole pull zone is purged instead,
-which is one request rather than thousands.
+being served from the cache, not just from storage.
+
+Bunny limits purging: exact URLs to a burst of 120, then 5 a second, and
+prefixes to a burst of 20, then one every two seconds.  A template change
+rewrites every page, which would be tens of thousands of exact purges, so
+changes are grouped by their top-level directory.  A directory with more
+than C<prefix_over> changed files is purged by prefix, as one request.
+Other changes are purged by exact URL; a directory's F<index.html> is
+served at three URLs (C<dir/>, C<dir>, and C<dir/index.html>), and all
+three are purged.  Renditions are published apart from pages (under
+F</img/>), so a change to every page purges no renditions.  When Bunny
+says to slow down, purging waits and tries again.
+
+With C<purge_all>, the whole pull zone is purged instead, which is one
+request.
 
 =cut
 
@@ -79,7 +89,12 @@ has api_url      => (is => 'ro', default => 'https://api.bunny.net');
 has concurrency    => (is => 'ro', default => 8);
 has attempts       => (is => 'ro', default => 3);
 has retry_delay    => (is => 'ro', default => 2);
-has purge_all_over => (is => 'ro', default => 500);
+has prefix_over    => (is => 'ro', default => 10);
+
+# How long to wait when Bunny answers a purge with 429 and no Retry-After,
+# and how many times to wait before giving up.
+has rate_limit_wait  => (is => 'ro', default => 2);
+has rate_limit_tries => (is => 'ro', default => 60);
 
 has logger => (is => 'ro', default => sub { sub { } });
 
@@ -137,13 +152,14 @@ sub plan ($self) {
 
 =method sync
 
-  my $result = $sync->sync({ dry_run => 0 });
+  my $result = $sync->sync({ dry_run => 0, purge_all => 0 });
 
 This does the work described above, and returns a hash: C<uploaded> and
 C<deleted>, the paths it uploaded and deleted, and C<purged>, the number of
-URLs purged, or C<all>.  With C<dry_run>, it returns what it would do,
-having done nothing.  It dies if any request fails, having saved what it
-did get done.
+purge requests made, or C<all>.  With C<dry_run>, it returns what it would
+do, having done nothing.  With C<purge_all>, it purges the whole pull zone,
+even if nothing else needed doing.  It dies if any request fails, having
+saved what it did get done.
 
 =cut
 
@@ -152,7 +168,10 @@ sub sync ($self, $arg = {}) {
   my %result = (uploaded => $upload, deleted => $delete, purged => 0);
 
   return \%result if $arg->{dry_run};
-  return \%result unless @$upload or @$delete;
+  unless (@$upload or @$delete) {
+    $result{purged} = $self->_purge_all if $arg->{purge_all};
+    return \%result;
+  }
 
   my $record = $self->_record;
   $self->state_dir->mkpath;
@@ -182,7 +201,8 @@ sub sync ($self, $arg = {}) {
   # the next sync.  -- claude, 2026-10-01
   $result{uploaded} = [ grep {; ! $failed{$_} } @$upload ];
   $result{deleted}  = $upload_failed ? [] : [ grep {; ! $failed{$_} } @$delete ];
-  $result{purged}   = $self->_purge([ $result{uploaded}->@*, $result{deleted}->@* ]);
+  $result{purged}   = $arg->{purge_all} ? $self->_purge_all
+                     : $self->_purge([ $result{uploaded}->@*, $result{deleted}->@* ]);
 
   die sprintf "%d request(s) failed%s; sync again to retry:\n%s",
     0 + keys %failed,
@@ -267,45 +287,100 @@ sub _delete_p ($self, $rel) {
   });
 }
 
-=method urls_for
+=method purges_for
 
-  my @urls = $sync->urls_for($rel);
+  my ($exact, $prefix) = $sync->purges_for(\@paths);
 
-This returns the URLs, on every purge host, at which the CDN may have cached
-the file at the given path.
+This returns the purges needed after the given paths changed: two array
+references, the URLs to purge exactly, and the URL prefixes to purge.  See
+L</DESCRIPTION> for how they're chosen.
 
 =cut
 
-sub urls_for ($self, $rel) {
-  my @paths = "/$rel";
-  if ($rel =~ m{\A(?:(.*)/)?index\.html\z}) {
-    my $dir = $1;
-    push @paths, defined $dir ? ("/$dir/", "/$dir") : '/';
+sub purges_for ($self, $paths) {
+  my %in;
+  for my $rel (@$paths) {
+    my ($top) = $rel =~ m{\A([^/]+)/};
+    push $in{ $top // '' }->@*, $rel;
   }
 
-  return map {; my $host = $_; map {; "https://$host$_" } @paths } $self->purge_hosts->@*;
+  my (@exact, @prefix);
+  for my $top (sort keys %in) {
+    my @rels = $in{$top}->@*;
+
+    if (length $top and @rels > $self->prefix_over) {
+      push @prefix, "/$top/";
+
+      # The directory without its slash is a URL of its own, and outside the
+      # prefix.
+      push @exact, "/$top" if grep {; $_ eq "$top/index.html" } @rels;
+      next;
+    }
+
+    for my $rel (@rels) {
+      push @exact, "/$rel";
+      if ($rel =~ m{\A(?:(.*)/)?index\.html\z}) {
+        my $dir = $1;
+        push @exact, defined $dir ? ("/$dir/", "/$dir") : '/';
+      }
+    }
+  }
+
+  my $on_hosts = sub (@paths) {
+    [ map {; my $host = $_; map {; "https://$host$_" } @paths } $self->purge_hosts->@* ];
+  };
+
+  return ($on_hosts->(@exact), $on_hosts->(@prefix));
+}
+
+sub _purge_all ($self) {
+  my $url = $self->api_url . '/pullzone/' . $self->pull_zone_id . '/purgeCache';
+  $self->_purge_p($url)->wait;
+  $self->logger->('purged the whole pull zone');
+  return 'all';
+}
+
+# A URL ending in a slash is purged as a prefix unless exactPath says
+# otherwise.
+sub _purge_url_p ($self, $url, $exact) {
+  my $api = Mojo::URL->new($self->api_url . '/purge')
+    ->query(url => $url, exactPath => $exact ? 'true' : 'false');
+  return $self->_purge_p($api);
+}
+
+# Post a purge request, waiting and trying again for as long as Bunny says
+# it's being asked too often.
+sub _purge_p ($self, $api, $tries = 1) {
+  return $self->ua->post_p($api, { AccessKey => $self->api_key })->then(sub ($tx) {
+    my $res = $tx->result;
+    return $tx if $res->is_success;
+
+    if ($res->code == 429 and $tries < $self->rate_limit_tries) {
+      my $wait = $res->headers->header('Retry-After') // '';
+      $wait = $self->rate_limit_wait unless $wait =~ /\A[0-9]+(?:\.[0-9]+)?\z/;
+      return Mojo::Promise->timer($wait)->then(sub { $self->_purge_p($api, $tries + 1) });
+    }
+
+    return Mojo::Promise->reject(sprintf 'purge: %s %s', $res->code, $res->message);
+  });
 }
 
 sub _purge ($self, $changed) {
   return 0 unless @$changed;
 
-  if (@$changed > $self->purge_all_over) {
-    my $url = $self->api_url . '/pullzone/' . $self->pull_zone_id . '/purgeCache';
-    $self->_checked_p($self->ua->post_p($url, { AccessKey => $self->api_key }), 'purge')->wait;
-    $self->logger->('purged the whole pull zone');
-    return 'all';
-  }
+  my ($exact, $prefix) = $self->purges_for($changed);
+  my %is_prefix = map {; $_ => 1 } @$prefix;
 
-  my @urls = map {; $self->urls_for($_) } @$changed;
-  my @failed = $self->_each('purging', \@urls, sub ($url) {
-    my $api = Mojo::URL->new($self->api_url . '/purge')->query(url => $url);
-    $self->_checked_p($self->ua->post_p($api, { AccessKey => $self->api_key }), 'purge');
+  my @failed = $self->_each('purging', [ @$prefix, @$exact ], sub ($url) {
+    $self->_purge_url_p($url, ! $is_prefix{$url});
   });
 
-  die sprintf "%d purge(s) failed; purge the pull zone by hand, or the CDN may serve stale or removed files:\n%s",
+  die sprintf "%d purge(s) failed; purge the pull zone by hand (jiggle sync --purge-all), "
+    . "or the CDN may serve stale or removed files:\n%s",
     0 + @failed, join '', map {; "  $_\n" } @failed if @failed;
 
-  return 0 + @urls;
+  $self->logger->(sprintf 'purged %d prefix(es) and %d URL(s)', 0 + @$prefix, 0 + @$exact);
+  return @$prefix + @$exact;
 }
 
 1;

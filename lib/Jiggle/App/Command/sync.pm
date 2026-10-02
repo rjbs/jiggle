@@ -34,7 +34,9 @@ sub description {
   files are skipped by size and modification time; builds leave unchanged
   files alone, so that's accurate, and much faster than comparing contents.
   With Bunny, they're skipped by comparing the build's manifest with a
-  record of what was uploaded; see Jiggle::Sync::Bunny.
+  record of what was uploaded.  Then what changed is purged from the CDN's
+  cache, by prefix where much changed; --purge-all purges everything
+  instead.  See Jiggle::Sync::Bunny.
 
   It refuses to run after an interrupted build, whose output may be half
   updated.  Build again first.
@@ -45,6 +47,7 @@ sub opt_spec {
   return (
     [ 'to=s',      'which target to sync to, if more than one: rsync or bunny' ],
     [ 'dry-run|n', 'show what would be copied or removed, but change nothing' ],
+    [ 'purge-all', 'with bunny, purge the whole pull zone from the CDN, not just what changed' ],
   );
 }
 
@@ -138,7 +141,7 @@ sub _bunny ($self, $opt, $config, $site) {
     logger => $self->logger,
   });
 
-  my $result = $sync->sync({ dry_run => $opt->dry_run });
+  my $result = $sync->sync({ dry_run => $opt->dry_run, purge_all => $opt->purge_all });
 
   if ($opt->dry_run) {
     say "upload $_" for $result->{uploaded}->@*;
@@ -148,9 +151,9 @@ sub _bunny ($self, $opt, $config, $site) {
     return;
   }
 
-  $self->logger->(sprintf 'synced: %d uploaded, %d deleted, %s purged',
+  $self->logger->(sprintf 'synced: %d uploaded, %d deleted; %s',
     0 + $result->{uploaded}->@*, 0 + $result->{deleted}->@*,
-    $result->{purged} eq 'all' ? 'the whole pull zone' : "$result->{purged} URL(s)");
+    $result->{purged} eq 'all' ? 'purged the whole pull zone' : "$result->{purged} purge request(s)");
 }
 
 1;

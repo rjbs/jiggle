@@ -297,8 +297,9 @@ photos and the handful of index pages that list them.  Uploads go first,
 deletions only once every upload has succeeded, and then the CDN's cache is
 purged of every changed or deleted URL, since rendition URLs survive
 re-derivation and a photo made private must leave the edge, not just
-storage.  Past a few hundred changed files, the whole pull zone is purged
-instead.
+storage.  Bunny rate-limits purges, so a top-level directory with many
+changes is purged by prefix; renditions live under `/img/`, apart from the
+pages, so that a change to every page purges none of them.
 
 ## Ingest
 
