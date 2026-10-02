@@ -16,7 +16,8 @@ statically generated site that is:
 
 * built on the laptop, incrementally, so adding a day's photos doesn't mean
   reprocessing 11,000 images
-* synchronized incrementally to cheap object storage (Cloudflare R2 to start)
+* synchronized incrementally to cheap hosting: a Bunny storage zone, or any
+  web server by rsync
 * backed by plain files: originals, TOML metadata in git, and a derived cache
 
 Features carried over from Flickr: albums, tags, title and description,
@@ -278,9 +279,24 @@ rendition, as an absolute URL), and `og:url`.
 
 ## Syncing
 
-`rclone sync --checksum site/ r2:<bucket>`.  With write-if-changed and
-hardlinked derivatives, a typical sync uploads the new photos and the handful
-of index pages that list them.
+`jiggle sync` publishes `site/` to one of two kinds of target, set in
+`jiggle.toml` (see `jiggle help sync`):
+
+* a web server, by `rsync`, which skips unchanged files by size and mtime
+  (accurate, because builds leave unchanged files alone) and deletes last
+* a Bunny storage zone behind a pull zone, served at a custom hostname by
+  CNAME, through Bunny's storage API
+
+Bunny serves a directory's `index.html` at `dir/` and `dir`, and our 404 page
+for a missing path, so the site needs no rewriting.  Nothing is compared
+remotely: the build's site manifest is diffed against a record (in
+`.jiggle/`) of what was last uploaded, so a typical sync uploads the new
+photos and the handful of index pages that list them.  Uploads go first,
+deletions only once every upload has succeeded, and then the CDN's cache is
+purged of every changed or deleted URL, since rendition URLs survive
+re-derivation and a photo made private must leave the edge, not just
+storage.  Past a few hundred changed files, the whole pull zone is purged
+instead.
 
 ## Ingest
 
@@ -444,7 +460,7 @@ backup (threads: *Coordinates missing*, *Album order and cover*).
 2. Map and OpenGraph.
 3. Search.
 4. `fsck`.
-5. Sync to R2.
+5. Sync to the web host.
 6. Flickr importer, once Net::Flickr::Backup is fixed and the ID scheme is
    chosen.
 7. Video.
