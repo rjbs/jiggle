@@ -123,6 +123,9 @@ button.primary:not(:disabled) { background: var(--accent); border-color: var(--a
 .field .row { display: flex; align-items: center; gap: 6px; }
 .field .row .value { flex: 1; }
 .field .row button { padding: 2px 10px; font-size: 16px; line-height: 1.2; }
+.field .row button.text, .field .sorts button { font-size: 12px; padding: 3px 8px; }
+.field .sorts { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px 6px; align-items: center; }
+.field .sorts span { font-size: 12px; color: var(--muted); }
 .field label.check { display: flex; align-items: center; gap: 6px; }
 .field > div > input[type=text] { margin-top: 6px; }
 .field.dirty input, .field.dirty textarea, .field.dirty select { border-color: var(--dirty); }
@@ -198,6 +201,8 @@ button.primary:not(:disabled) { background: var(--accent); border-color: var(--a
   background: rgba(0, 0, 0, 0.6); color: white;
 }
 .thumb .badge.pending { background: rgba(217, 119, 6, 0.9); }
+.thumb .badge.cover { background: rgba(37, 99, 235, 0.9); }
+.thumb .badge.out { background: rgba(185, 28, 28, 0.9); }
 .thumb.dirty figcaption { color: var(--dirty); font-weight: 600; }
 .thumb.dirty figcaption::before { content: "● "; }
 

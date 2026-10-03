@@ -19,6 +19,8 @@ const state = {
   anchor:   null,        // where a shift-click range starts
   newAlbums: new Map(),  // key => title, for albums made here and not yet written
   newAlbumCount: 0,
+  album:    null,        // the album being edited, if the batch is one
+  albumEdits: {},        // field => value, like a photo's edits
   frozen:   false,
 };
 
@@ -101,6 +103,47 @@ function revert(photos, field) {
   change(photos, field, (_, p) => SAVED[field](p));
 }
 
+// The album, when the batch is one: like a photo, it's kept as saved, with
+// a set of edits.  Its order is the order of the sheet.
+const ALBUM_SAVED = {
+  title:       a => a.title,
+  description: a => a.description,
+  cover:       a => a.cover ?? null,
+  order:       a => a.photos,
+};
+
+function albumCurrent(field) {
+  return field in state.albumEdits ? state.albumEdits[field] : ALBUM_SAVED[field](state.album);
+}
+
+function albumChange(field, value) {
+  if (same(value, ALBUM_SAVED[field](state.album))) delete state.albumEdits[field];
+  else state.albumEdits[field] = value;
+  refreshWriteButton();
+}
+
+const albumDirty = () => Object.keys(state.albumEdits).length > 0;
+const albumEdited = (field) => field in state.albumEdits;
+
+// The album can be edited only if every photo in it is in the batch: one
+// added to it since the editor started can't be placed in an order.
+function albumEditable() {
+  return !!state.album && state.album.photos.every(id => state.byId.has(id));
+}
+
+// Shows the sheet in the album's order, then any photos no longer in it.
+function applyOrder() {
+  if (!albumEditable()) return;
+  const order = albumCurrent("order");
+  const placed = new Set(order);
+  state.photos = [
+    ...order.map(id => state.byId.get(id)),
+    ...state.photos.filter(p => !placed.has(p.id)),
+  ];
+}
+
+const inAlbum = (p) => !state.album || current(p, "albums").includes(state.album.slug);
+
 async function load() {
   const res = await fetch("/api/batch");
   if (!res.ok) throw new Error(`loading the batch: ${res.status}`);
@@ -111,6 +154,8 @@ async function load() {
   state.byId   = new Map(data.photos.map(p => [p.id, p]));
   state.albums = data.albums;
   state.tags   = data.tags;
+  state.album  = data.album || null;
+  applyOrder();
 
   for (const id of [...state.selected]) {
     if (!state.byId.has(id)) state.selected.delete(id);
@@ -158,6 +203,8 @@ function thumbFor(p) {
   const node = el("figure", { class: "thumb", "data-id": p.id, style: `width: ${frameW + 10}px` },
     el("div", { class: "frame", style: `width: ${frameW}px` }, img),
     el("div", { class: "badges" },
+      state.album && albumCurrent("cover") === p.id ? el("span", { class: "badge cover", text: "cover" }) : null,
+      inAlbum(p) ? null : el("span", { class: "badge out", text: "out of album" }),
       current(p, "pending") ? el("span", { class: "badge pending", text: "pending" }) : null,
       current(p, "visibility") === "private" ? el("span", { class: "badge", text: "private" }) : null,
       p.type === "video" ? el("span", { class: "badge", text: "▶" }) : null,
@@ -338,23 +385,31 @@ function distinct(photos, field) {
 
 // The frame of a field: a name, a revert button shown when it's dirty, the
 // control, and a note.  refresh() recomputes dirtiness and the note.
-function fieldFrame(name, photos, field, control, noteFn = () => "") {
-  const note = el("div", { class: "note" });
+function frame(name, control, { dirty, revert, note = () => "" }) {
+  const noteNode = el("div", { class: "note" });
   const node = el("div", { class: "field" },
     el("div", { class: "name" },
       name,
       el("button", { type: "button", class: "revert", text: "revert", title: "undo unsaved changes to this field",
-        onclick: () => { revert(photos, field); renderSidebar(); } }),
+        onclick: () => { revert(); renderSheet(); renderSidebar(); } }),
     ),
     control,
-    note,
+    noteNode,
   );
   node.refresh = () => {
-    node.classList.toggle("dirty", photos.some(p => isEdited(p, field)));
-    note.textContent = noteFn();
+    node.classList.toggle("dirty", dirty());
+    noteNode.textContent = note();
   };
   node.refresh();
   return node;
+}
+
+function fieldFrame(name, photos, field, control, noteFn = () => "") {
+  return frame(name, control, {
+    dirty:  () => photos.some(p => isEdited(p, field)),
+    revert: () => revert(photos, field),
+    note:   noteFn,
+  });
 }
 
 // Notes for a single-valued field when several photos are selected: what
@@ -616,12 +671,140 @@ function facts(p) {
   );
 }
 
+// The album's own fields, shown when no photo is selected.
+function albumTextField(name, field, { multiline = false, required = false } = {}) {
+  const input = el(multiline ? "textarea" : "input", { type: multiline ? null : "text" });
+  input.value = albumCurrent(field);
+
+  let invalid = false;
+  const node = frame(name, input, {
+    dirty:  () => albumEdited(field),
+    revert: () => albumChange(field, ALBUM_SAVED[field](state.album)),
+    note:   () => invalid ? "It can't be empty." : "",
+  });
+
+  input.addEventListener("input", () => {
+    invalid = required && input.value.trim() === "";
+    node.classList.toggle("invalid", invalid);
+    if (!invalid) albumChange(field, input.value);
+    node.refresh();
+  });
+  return node;
+}
+
+function photoName(p) {
+  return current(p, "title") || p.file || p.id;
+}
+
+function coverField() {
+  const id = albumCurrent("cover");
+  const p = id && state.byId.get(id);
+  return frame("Cover", el("div", { class: "value", text: p ? photoName(p) : "none, so the first photo" }), {
+    dirty:  () => albumEdited("cover"),
+    revert: () => albumChange("cover", ALBUM_SAVED.cover(state.album)),
+    note:   () => p && current(p, "visibility") === "private"
+      ? "It's private, so the site shows the album's first published photo instead."
+      : "To change it, select a photo and choose “Make cover”.",
+  });
+}
+
+// Puts the album in order by when its photos were taken or added, oldest
+// first (dir 1) or newest first (dir -1).  Photos without a date go last,
+// and ties keep their places.
+function sortAlbum(key, dir) {
+  const when = (id) => {
+    const p = state.byId.get(id);
+    const t = Date.parse(key === "taken" ? current(p, "taken") : p.added);
+    return Number.isNaN(t) ? null : t;
+  };
+  const order = albumCurrent("order");
+  const dated   = order.filter(id => when(id) !== null).sort((a, b) => dir * (when(a) - when(b)));
+  const undated = order.filter(id => when(id) === null);
+  albumChange("order", [ ...dated, ...undated ]);
+  applyOrder();
+  renderSheet();
+}
+
+function orderField() {
+  const sort = (text, title, key, dir) =>
+    el("button", { type: "button", text, title, onclick: () => { sortAlbum(key, dir); node.refresh(); } });
+
+  const node = frame("Order", el("div", { class: "sorts" },
+    el("span", { text: "taken" }),
+    sort("oldest", "sort by date taken, oldest first", "taken", 1),
+    sort("newest", "sort by date taken, newest first", "taken", -1),
+    el("span", { text: "added" }),
+    sort("oldest", "sort by date added, oldest first", "added", 1),
+    sort("newest", "sort by date added, newest first", "added", -1),
+  ), {
+    dirty:  () => albumEdited("order"),
+    revert: () => { albumChange("order", ALBUM_SAVED.order(state.album)); applyOrder(); },
+    note:   () => "Sorting puts photos without a date last.  To move some to the start or end, select them.",
+  });
+  return node;
+}
+
+function albumPanel() {
+  if (!albumEditable()) {
+    return [
+      el("h2", { text: "Album" }),
+      el("p", { class: "empty", text:
+        "Photos have been added to this album since the editor started, so the album itself can't be edited here.  Restart the editor to edit it." }),
+    ];
+  }
+  return [
+    el("h2", { text: `Album: ${state.album.slug}` }),
+    albumTextField("Title", "title", { required: true }),
+    albumTextField("Description (Markdown)", "description", { multiline: true }),
+    coverField(),
+    orderField(),
+  ];
+}
+
+// Moves the selected photos, in their order, to the start or end of the
+// album.
+function moveSelected(toStart) {
+  const order = albumCurrent("order");
+  const moving = order.filter(id => state.selected.has(id));
+  const rest   = order.filter(id => !state.selected.has(id));
+  albumChange("order", toStart ? [ ...moving, ...rest ] : [ ...rest, ...moving ]);
+  applyOrder();
+  renderSheet();
+}
+
+// The album controls for the selection.
+function albumSelectionField(photos) {
+  const one = photos.length === 1 ? photos[0] : null;
+  const isCover = one && albumCurrent("cover") === one.id;
+
+  const node = frame("Album", el("div", { class: "row" },
+    el("button", { type: "button", class: "text", text: "Move to start", onclick: () => { moveSelected(true); node.refresh(); } }),
+    el("button", { type: "button", class: "text", text: "Move to end", onclick: () => { moveSelected(false); node.refresh(); } }),
+    one ? el("button", { type: "button", class: "text", text: "Make cover", disabled: isCover || !inAlbum(one),
+      onclick: () => { albumChange("cover", one.id); refreshThumbs(); renderSidebar(); } }) : null,
+  ), {
+    dirty:  () => albumEdited("order") || albumEdited("cover"),
+    revert: () => {
+      albumChange("order", ALBUM_SAVED.order(state.album));
+      albumChange("cover", ALBUM_SAVED.cover(state.album));
+      applyOrder();
+    },
+    note:   () => isCover ? "This is the album's cover." : "",
+  });
+  return node;
+}
+
+function refreshThumbs() {
+  for (const p of state.photos) refreshThumb(p.id);
+}
+
 function renderSidebar() {
   const side = $("#sidebar");
   const photos = selectedPhotos();
 
   if (!photos.length) {
     side.replaceChildren(
+      ...(state.album ? albumPanel() : []),
       el("h2", { text: `${state.photos.length} photo(s) in this batch` }),
       el("p", { class: "empty", text:
         "Click a photo to select it.  ⌘-click adds or removes one, shift-click selects a range, and dragging selects everything the box touches.  ⌘A selects all; Escape selects none." }),
@@ -650,6 +833,7 @@ function renderSidebar() {
   side.replaceChildren(...[
     el("h2", { text: one ? (one.file || one.id) : `${photos.length} photos selected` }),
     one ? preview(one) : null,
+    albumEditable() ? albumSelectionField(photos) : null,
     ...fields,
     one ? facts(one) : null,
   ].filter(Boolean));
@@ -658,11 +842,14 @@ function renderSidebar() {
 // ---------------------------------------------------------------------------
 // Writing
 
+const unwritten = () => state.edits.size > 0 || albumDirty();
+
 function refreshWriteButton() {
   const n = state.edits.size;
   const b = $("#write");
-  b.disabled = state.frozen || n === 0;
-  b.textContent = n ? `Write changes (${n})` : "Write changes";
+  b.disabled = state.frozen || !unwritten();
+  const what = [ n ? `${n}` : null, albumDirty() ? "album" : null ].filter(Boolean).join(" + ");
+  b.textContent = what ? `Write changes (${what})` : "Write changes";
 }
 
 function freeze(on) {
@@ -673,7 +860,7 @@ function freeze(on) {
 }
 
 async function write() {
-  if (state.frozen || !state.edits.size) return;
+  if (state.frozen || !unwritten()) return;
   if (document.activeElement) document.activeElement.blur();
 
   // Album membership goes as additions and removals, which the server merges
@@ -693,16 +880,19 @@ async function write() {
     return { id, version: p.version, changes };
   });
   const newAlbums = [ ...used ].map(key => ({ key, title: state.newAlbums.get(key) }));
+  const album = albumDirty()
+    ? { version: state.album.version, changes: { ...state.albumEdits } }
+    : undefined;
 
   freeze(true);
-  setStatus(`writing ${sent.length} photo(s)…`);
+  setStatus(`writing ${sent.length} photo(s)${album ? " and the album" : ""}…`);
 
   let res, data;
   try {
     res = await fetch("/api/write", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ note: $("#note").value, photos: sent, new_albums: newAlbums }),
+      body: JSON.stringify({ note: $("#note").value, photos: sent, new_albums: newAlbums, album }),
     });
     data = await res.json();
   } catch (e) {
@@ -714,9 +904,13 @@ async function write() {
   freeze(false);
 
   if (res.status === 409) {
-    setStatus(`Nothing written: ${data.conflicts.length} photo(s) changed on disk since loading.  `, true,
+    const what = [
+      data.conflicts.length ? `${data.conflicts.length} photo(s)` : null,
+      data.album_conflict ? "the album" : null,
+    ].filter(Boolean).join(" and ");
+    setStatus(`Nothing written: ${what} changed on disk since loading.  `, true,
       el("button", { type: "button", text: "discard my edits to those and reload them",
-        onclick: () => reloadPhotos(data.conflicts) }));
+        onclick: () => reloadPhotos(data.conflicts, data.album_conflict) }));
     return;
   }
   if (!res.ok) {
@@ -730,16 +924,23 @@ async function write() {
   for (const { id } of sent) state.edits.delete(id);
   state.albums = data.albums;
   state.newAlbums.clear();
+  if (data.album !== undefined) {
+    state.album = data.album;
+    state.albumEdits = {};
+    applyOrder();
+  }
   refreshAlbumList();
   $("#note").value = "";
 
-  setStatus(data.commit ? `committed ${data.commit}: ${data.photos.length} photo(s)` : "nothing needed changing");
+  setStatus(data.commit
+    ? `committed ${data.commit}: ${[ data.photos.length ? `${data.photos.length} photo(s)` : null, album ? "the album" : null ].filter(Boolean).join(" and ")}`
+    : "nothing needed changing");
   renderSheet();
   renderSidebar();
   refreshWriteButton();
 }
 
-async function reloadPhotos(ids) {
+async function reloadPhotos(ids, album = false) {
   const res = await fetch("/api/batch");
   if (!res.ok) { setStatus(`reloading failed: ${res.status}`, true); return; }
   const data = await res.json();
@@ -748,7 +949,13 @@ async function reloadPhotos(ids) {
     if (fresh.has(id)) replaceSaved(fresh.get(id));
     state.edits.delete(id);
   }
-  setStatus(`reloaded ${ids.length} photo(s) from disk`);
+  if (album) {
+    state.album = data.album || null;
+    state.albumEdits = {};
+    applyOrder();
+  }
+  setStatus(`reloaded ${[ ids.length ? `${ids.length} photo(s)` : null, album ? "the album" : null ]
+    .filter(Boolean).join(" and ")} from disk`);
   renderSheet();
   renderSidebar();
   refreshWriteButton();
@@ -784,7 +991,7 @@ async function start() {
   $("#write").addEventListener("click", write);
 
   window.addEventListener("beforeunload", (ev) => {
-    if (state.edits.size) { ev.preventDefault(); ev.returnValue = ""; }
+    if (unwritten()) { ev.preventDefault(); ev.returnValue = ""; }
   });
 
   try {
