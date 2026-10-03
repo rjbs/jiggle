@@ -26,9 +26,12 @@ A query is a list of terms, all of which a photo must match:
   tag:TAG         tagged TAG, compared as the site compares tags (by slug)
   year:YYYY       taken in that year
   id:ID           the photo with that id; given more than once, any of them
+  limit:N         only the first N of the photos that match
 
 Photos come in album order when the query names an album, and otherwise in
-the order they were taken, oldest first, with undated photos last.
+the order they were taken, oldest first, with undated photos last.  With
+C<limit>, the first N in that order are the batch, which is for working
+through many photos (say, pending ones) a handful at a time.
 
 An unknown term, or an album that doesn't exist, is an error when the query
 is made, not an empty batch.
@@ -40,6 +43,7 @@ has terms   => (is => 'ro', required => 1);
 
 has _tests => (is => 'lazy', init_arg => undef);
 has _album => (is => 'rw', init_arg => undef);
+has _limit => (is => 'rw', init_arg => undef);
 
 sub BUILD ($self, $) {
   die "a query needs at least one term\n" unless $self->terms->@*;
@@ -74,6 +78,10 @@ sub _build__tests ($self) {
     }
     elsif ($term =~ /\Aid:(\S+)\z/) {
       $ids{$1} = 1;
+    }
+    elsif ($term =~ /\Alimit:([1-9][0-9]*)\z/) {
+      die "limit given more than once\n" if defined $self->_limit;
+      $self->_limit($1);
     }
     else {
       die "unknown query term: $term\n";
@@ -112,14 +120,17 @@ sub photos ($self) {
   if (my $album = $self->_album) {
     my %pos;
     @pos{ $album->photos->@* } = (0 .. $album->photos->$#*);
-    return sort {; $pos{ $a->id } <=> $pos{ $b->id } } @found;
+    @found = sort {; $pos{ $a->id } <=> $pos{ $b->id } } @found;
+  } else {
+    @found = sort {;
+         (defined $a->taken ? 0 : 1) <=> (defined $b->taken ? 0 : 1)
+      || (($a->taken // '') cmp ($b->taken // ''))
+      || ($a->id cmp $b->id)
+    } @found;
   }
 
-  return sort {;
-       (defined $a->taken ? 0 : 1) <=> (defined $b->taken ? 0 : 1)
-    || (($a->taken // '') cmp ($b->taken // ''))
-    || ($a->id cmp $b->id)
-  } @found;
+  splice @found, $self->_limit if defined $self->_limit and @found > $self->_limit;
+  return @found;
 }
 
 1;

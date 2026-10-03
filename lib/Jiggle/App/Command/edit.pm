@@ -15,7 +15,7 @@ sub description {
   The batch is every photo matching all the query's terms:
 
     pending  private  public  all
-    album:SLUG  tag:TAG  year:YYYY  id:ID
+    album:SLUG  tag:TAG  year:YYYY  id:ID  limit:N
 
   For example, "jiggle edit pending" reviews newly ingested photos.
 
