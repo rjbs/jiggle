@@ -41,10 +41,16 @@ query_selects([ 'album:oslo', 'tag:oslo' ], [ 'old00002' ]);
 query_selects([ 'year:2026' ],          [ 'new00002', 'new00001' ]);
 query_selects([ 'id:old00002', 'id:undated1' ], [ 'old00002', 'undated1' ]);
 query_selects([ 'tag:nothing' ],        [ ]);
+query_selects([ 'pending', 'limit:1' ], [ 'new00002' ]);
+query_selects([ 'all', 'limit:2' ],     [ 'old00001', 'old00002' ]);
+query_selects([ 'album:oslo', 'limit:1' ], [ 'old00002' ]);
+query_selects([ 'tag:oslo', 'limit:5' ],   [ 'old00002' ]);
 
 query_fails([ ],               qr/at least one term/);
 query_fails([ 'pendng' ],      qr/unknown query term: pendng/);
 query_fails([ 'album:nope' ],  qr/no album named nope/);
 query_fails([ 'year:08' ],     qr/unknown query term/);
+query_fails([ 'limit:0' ],     qr/unknown query term/);
+query_fails([ 'limit:1', 'limit:2' ], qr/limit given more than once/);
 
 done_testing;

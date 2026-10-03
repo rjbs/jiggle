@@ -7,10 +7,12 @@ use Digest::SHA ();
 use Jiggle ();
 use Jiggle::Derive;
 use Jiggle::Album;
+use Jiggle::Library;
 use Jiggle::Photo;
 use Jiggle::Query;
 use Jiggle::TOML qw( datetime_with_offset );
 use Mojo::JSON ();
+use Mojo::URL;
 use Mojo::Server::Daemon;
 use Mojolicious;
 use Path::Tiny ();
@@ -21,16 +23,20 @@ Jiggle::Editor - a local web app for reviewing and editing a batch of photos
 
 =head1 SYNOPSIS
 
-  my $editor = Jiggle::Editor->new({ library => $library, ids => \@ids });
+  my $editor = Jiggle::Editor->new({ library => $library, query => [ 'pending' ] });
   my $app    = $editor->app;     # a Mojolicious app
   say $editor->token;            # needed once, in the URL: /?token=...
 
 =head1 DESCRIPTION
 
-The editor serves a contact sheet of one batch of photos, fixed when it's
-made: a list of ids, not a live query, so photos don't leave the batch when
-they change.  Everything it serves is read from the library's files at the
-time of the request, so a reload shows what's on disk.
+The editor serves a contact sheet of a batch of photos, chosen by a query
+(see L<Jiggle::Query>) typed into the page, and a list of the library's
+albums.  The batch belongs to the page: the server answers a query with a
+list of photos, and the page keeps that list until it asks again, so photos
+don't leave the batch as they're edited.  Everything the server sends is
+read from the library's files at the time of the request, so photos added
+from the command line while the editor is open are found by the next query.
+OLD
 
 Any web page in the browser can send requests to localhost, so every request
 must carry the editor's token.  The first request gives it in the URL, and
@@ -41,16 +47,9 @@ only with requests from the editor's own pages.
 
 has library => (is => 'ro', required => 1);
 
-# The batch, in order.
-has ids => (is => 'ro', required => 1);
-
-# A label for the batch, like the query that chose it.
-has label => (is => 'ro', default => '');
-
-# The slug of the album being edited, if the batch is an album; then the
-# album's own fields (title, description, cover, and order) can be edited
-# too.  See L</write_changes>.
-has album => (is => 'ro');
+# The query the page opens on, as a list of terms; with none, it opens on the
+# album list.
+has query => (is => 'ro', default => sub { [] });
 
 has token => (
   is => 'lazy',
@@ -83,38 +82,29 @@ my %SERVABLE = map {; $_ => 1 } qw( h480.webp 500.webp 1024.webp 2048.webp poste
 
   Jiggle::Editor->serve_query($library, [ 'pending' ], { port => 3001, open => 1 });
 
-This picks a batch with L<Jiggle::Query>, then serves an editor for it on
-127.0.0.1 until interrupted, printing its URL (with the token) and, if C<open>
-is true, opening it in a browser.  It dies if nothing matches.
-
-If the query is exactly one C<album:SLUG> term, the editor edits that album,
-too.  With any other term beside it, the batch is only part of the album, so
-the album isn't edited.
+This serves an editor on 127.0.0.1 until interrupted, printing its URL (with
+the token) and, if C<open> is true, opening it in a browser.  The page opens
+on the given query, or, given none, on the album list.  It dies if the query
+isn't one, before serving anything.
 
 =cut
 
 sub serve_query ($class, $library, $terms, $arg = {}) {
-  my $query = Jiggle::Query->new({ library => $library, terms => $terms });
+  my $count;
+  if (@$terms) {
+    my @photos = Jiggle::Query->new({ library => $library, terms => $terms })->photos;
+    $count = @photos;
+  }
 
-  my @ids = map {; $_->id } $query->photos;
-  die "no photos match: @$terms\n" unless @ids;
-
-  my ($album) = @$terms == 1 ? $terms->[0] =~ /\Aalbum:(.+)\z/ : ();
-
-  my $editor = $class->new({
-    library => $library,
-    ids     => \@ids,
-    label   => "@$terms",
-    (defined $album ? (album => $album) : ()),
-  });
+  my $editor = $class->new({ library => $library, query => $terms });
 
   my $listen = "http://127.0.0.1:" . ($arg->{port} // 3001);
-  my $url    = "$listen/?token=" . $editor->token;
+  my $url    = Mojo::URL->new("$listen/")->query(token => $editor->token, (@$terms ? (q => "@$terms") : ()));
 
   my $daemon = Mojo::Server::Daemon->new(app => $editor->app, listen => [ $listen ], silent => 1);
   $daemon->start;
 
-  say sprintf '%d photo(s); editing at %s', 0 + @ids, $url;
+  say defined $count ? sprintf('%d photo(s); editing at %s', $count, $url) : "editing at $url";
   say 'press control-C to stop';
   system('open', $url) if $^O eq 'darwin' && $arg->{open};
 
@@ -127,7 +117,6 @@ sub app ($self) {
   $app->secrets([ $self->token ]);
   $app->types->type(webp => 'image/webp');
 
-  my %in_batch = map {; $_ => 1 } $self->ids->@*;
   my $editor_dir = $self->share_dir->child('editor');
 
   my $r = $app->routes;
@@ -136,7 +125,8 @@ sub app ($self) {
     if (defined(my $token = $c->param('token'))) {
       return $c->render(text => 'bad token', status => 403) unless $token eq $self->token;
       $c->cookie($COOKIE => $token, { httponly => 1, samesite => 'Strict', path => '/' });
-      return $c->redirect_to('/');
+      my $q = $c->param('q');
+      return $c->redirect_to(defined $q ? $c->url_for('/')->query(q => $q) : '/');
     }
     return $c->render(text => 'no token', status => 403)
       unless ($c->cookie($COOKIE) // '') eq $self->token;
@@ -163,7 +153,17 @@ sub app ($self) {
 
   $authed->get('/api/batch' => sub ($c) {
     $c->res->headers->cache_control('no-store');
-    $c->render(json => $self->batch_data);
+    my $ids = $c->param('ids');
+    my $data = eval {
+      $self->batch_data(defined $ids ? { ids => [ split /,/, $ids ] } : { q => $c->param('q') // '' });
+    };
+    return $c->render(json => { error => $@ =~ s/\n\z//r }, status => 400) unless $data;
+    $c->render(json => $data);
+  });
+
+  $authed->get('/api/albums' => sub ($c) {
+    $c->res->headers->cache_control('no-store');
+    $c->render(json => { albums => $self->album_overview });
   });
 
   $authed->post('/api/write' => sub ($c) {
@@ -173,7 +173,7 @@ sub app ($self) {
 
   $authed->get('/r/:id/#name' => sub ($c) {
     my ($id, $name) = ($c->param('id'), $c->param('name'));
-    return $c->reply->not_found unless $in_batch{$id} and $SERVABLE{$name};
+    return $c->reply->not_found unless $id =~ /\A[0-9a-z]+\z/ and $SERVABLE{$name};
     my $path = $self->library->derived_path($id, $name);
     return $c->reply->not_found unless -f $path;
     $c->res->headers->cache_control('no-cache');
@@ -185,42 +185,89 @@ sub app ($self) {
 
 =method batch_data
 
-This returns the batch as the editor's page gets it: the photos, in order, as
-they are on disk now, the library's albums, and every tag in the library (as
-of when the editor started), for suggestions.  Each photo has a C<version>,
-the digest of its metadata file, which a write must present so that changes
-made to the file since it was loaded aren't overwritten.
+  my $data = $editor->batch_data({ q => 'pending limit:50' });
+  my $data = $editor->batch_data({ ids => [ @ids ] });
 
-When editing an album, it has C<album>, too: its C<slug>, C<title>,
+This returns a batch as the editor's page gets it: the photos a query picks
+(its terms separated by spaces), or the given photos, in order, as they are
+on disk now; the library's albums; and every tag in the library, for
+suggestions.  Each photo has a C<version>, the digest of its metadata file,
+which a write must present so that changes made to the file since it was
+loaded aren't overwritten.  It dies if the query isn't one.
+
+If the query is exactly one C<album:SLUG> term, the batch is that album, and
+the album can be edited, too, so there's an C<album>: its C<slug>, C<title>,
 C<description>, C<cover>, C<photos> (in order), and C<version>, the digest of
-its file.
+its file.  With any other term beside it, the batch is only part of the
+album, so the album isn't offered for editing.
 
 =cut
 
-sub batch_data ($self) {
+sub batch_data ($self, $arg) {
+  # The library is read afresh, so photos added since the last request are
+  # found.  With its cache of parsed metadata, that's well under a second
+  # for twelve thousand photos.  -- claude, 2026-10-03
+  my $library = Jiggle::Library->new({ root => $self->library->root });
+
+  my (@ids, $album, $query);
+  if ($arg->{ids}) {
+    @ids = grep {; -e $library->meta_path($_) } $arg->{ids}->@*;
+  } else {
+    my @terms = split ' ', $arg->{q} // '';
+    $query = "@terms";
+    @ids = map {; $_->id } Jiggle::Query->new({ library => $library, terms => \@terms })->photos;
+    ($album) = @terms == 1 ? $terms[0] =~ /\Aalbum:(.+)\z/ : ();
+  }
+
   my @albums    = $self->_albums;
   my %albums_of = $self->_albums_of(@albums);
-
-  my @photos = map {; $self->_photo_record($_, \%albums_of) }
-               grep {; -e $self->library->meta_path($_) } $self->ids->@*;
-
-  my %tags = map {; $_ => 1 } map {; $_->tags->@* } $self->library->photos;
+  my %tags = map {; $_ => 1 } map {; $_->tags->@* } $library->photos;
 
   return {
-    label  => $self->label,
-    photos => \@photos,
+    (defined $query ? (query => $query) : ()),
+    photos => [ map {; $self->_photo_record($_, \%albums_of) } @ids ],
     tags   => [ sort { fc $a cmp fc $b } keys %tags ],
     albums => _album_list(@albums),
-    ($self->album ? (album => $self->_album_record) : ()),
+    (defined $album ? (album => $self->_album_record($album)) : ()),
   };
 }
 
-sub _album_file ($self) { $self->library->albums_dir->child($self->album . '.toml') }
+=method album_overview
 
-# The album being edited, as the page gets it, read from its file now; undef
+This returns every album, for the editor's album list, sorted by title: its
+C<slug>, C<title>, C<created>, C<cover> (or its first photo), and how many of
+its photos are C<published>, C<pending> (whatever their visibility), and
+C<private> (and not pending).  Albums with nothing published, which the site
+leaves out, are included.
+
+=cut
+
+sub album_overview ($self) {
+  my $library = Jiggle::Library->new({ root => $self->library->root });
+
+  my @overview;
+  for my $album ($self->_albums) {
+    my @photos = grep {; defined } map {; $library->photo($_) } $album->photos->@*;
+    push @overview, {
+      slug    => $album->slug,
+      title   => $album->title,
+      created => $album->created,
+      cover   => $album->cover // ($photos[0] && $photos[0]->id),
+      published => scalar(grep {; $_->is_published } @photos),
+      pending   => scalar(grep {; $_->pending } @photos),
+      private   => scalar(grep {; ! $_->is_public and ! $_->pending } @photos),
+    };
+  }
+
+  return [ sort {; fc $a->{title} cmp fc $b->{title} } @overview ];
+}
+
+sub _album_file ($self, $slug) { $self->library->albums_dir->child("$slug.toml") }
+
+# An album, as the page gets it for editing, read from its file now; undef
 # if it's gone.
-sub _album_record ($self) {
-  my $file = $self->_album_file;
+sub _album_record ($self, $slug) {
+  my $file = $self->_album_file($slug);
   return undef unless -e $file;
 
   my $bytes = $file->slurp_raw;
@@ -297,14 +344,15 @@ it is now.  An album whose cover is removed gets its first photo as its cover.
 
 A photo whose rotation changes has its renditions remade before this returns.
 
-When editing an album, the request can change the album, too:
+When editing an album, the request names it, and can change it, too:
 
   album => {
+    slug    => $slug,
     version => $version,
     changes => { title => '...', description => '...', cover => $id, order => [ @ids ] },
   }
 
-Its C<version> is checked like a photo's.  C<order> must name the album's
+If it changes anything, its C<version> is checked like a photo's.  C<order> must name the album's
 photos, each once.  A photo removed from the album in the same request is
 left out of the order, and C<cover> must be one of the photos the album has
 afterward.
@@ -312,8 +360,8 @@ afterward.
 The result has C<photos>, each written photo as L</batch_data> would give it,
 and C<commit>, the new commit's abbreviated id (undef if nothing changed, or
 F<meta> isn't a git repository).  It also has C<albums>, every album, and
-C<new_albums>, which maps each new album's key to its slug, and, when editing
-an album, C<album>, as L</batch_data> gives it.  A failure has a C<status>
+C<new_albums>, which maps each new album's key to its slug, and, if the
+request named an album, C<album>, as L</batch_data> gives it.  A failure has a C<status>
 (409 for a conflict, 400 for anything else) and an C<error>, and a conflict
 lists the photos in C<conflicts>, and has C<album_conflict> true if the
 album's file had changed.
@@ -326,7 +374,6 @@ my %TEXT_FIELD = map {; $_ => 1 } qw( title description );
 my $DATETIME = qr/\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:Z|[-+][0-9]{2}:[0-9]{2})?\z/;
 
 sub write_changes ($self, $request) {
-  my %in_batch = map {; $_ => 1 } $self->ids->@*;
   my (@plan, @conflicts, %fields_changed, %touched);
 
   # Albums as they are on disk now, and any the request makes.  Membership
@@ -351,16 +398,18 @@ sub write_changes ($self, $request) {
 
   # Changes to the album being edited, checked now and applied with the
   # membership changes below.
+  my $edit = $request->{album};
+  my $editing = $edit && $edit->{slug};
+  return _failure(400, "no album $editing") if defined $editing and ! $album{$editing};
+
   my (%album_change, $album_conflict);
-  if (my $edit = $request->{album}) {
-    return _failure(400, 'not editing an album') unless $self->album;
-    my $file = $self->_album_file;
-    if (! -e $file or Digest::SHA::sha1_hex($file->slurp_raw) ne ($edit->{version} // '')) {
+  if ($editing and my %changes = ($edit->{changes} // {})->%*) {
+    my $file = $self->_album_file($editing);
+    if (Digest::SHA::sha1_hex($file->slurp_raw) ne ($edit->{version} // '')) {
       $album_conflict = 1;
     } else {
-      my %changes = ($edit->{changes} // {})->%*;
       for my $field (sort keys %changes) {
-        my $error = _album_change(\%album_change, $album{ $self->album }, $field, $changes{$field});
+        my $error = _album_change(\%album_change, $album{$editing}, $field, $changes{$field});
         return _failure(400, "album: $error") if $error;
       }
     }
@@ -369,9 +418,9 @@ sub write_changes ($self, $request) {
   my (%add_to, %remove_from);
   for my $item (($request->{photos} // [])->@*) {
     my $id = $item->{id} // '';
-    return _failure(400, "not in this batch: $id") unless $in_batch{$id};
+    my $file = $id =~ /\A[0-9a-z]+\z/ && $self->library->meta_path($id);
+    return _failure(400, "no photo $id") unless $file and -e $file;
 
-    my $file  = $self->library->meta_path($id);
     my $bytes = $file->slurp_raw;
     if (Digest::SHA::sha1_hex($bytes) ne ($item->{version} // '')) {
       push @conflicts, $id;
@@ -422,7 +471,7 @@ sub write_changes ($self, $request) {
   my (@new_titles, $album_edited);
   for my $slug (sort keys %album) {
     my $old   = $album{$slug};
-    my $edits = $slug eq ($self->album // '') ? \%album_change : {};
+    my $edits = $slug eq ($editing // '') ? \%album_change : {};
 
     my %gone = map {; $_ => 1 } ($remove_from{$slug} // [])->@*;
     my @photos = grep {; ! $gone{$_} } ($edits->{order} // $old->photos)->@*;
@@ -466,7 +515,7 @@ sub write_changes ($self, $request) {
     my @what;
     push @what, sprintf 'edit %d photo(s): %s', scalar keys %touched, join q{, }, sort keys %fields_changed
       if %touched;
-    push @what, sprintf 'edit album %s: %s', $self->album, join q{, }, sort keys %album_change
+    push @what, sprintf 'edit album %s: %s', $editing, join q{, }, sort keys %album_change
       if $album_edited;
     my $message = join '; ', @what;
     $message .= '; new album: ' . join q{, }, @new_titles if @new_titles;
@@ -485,11 +534,11 @@ sub write_changes ($self, $request) {
     commit => $commit,
     photos => [
       map  {; $self->_photo_record($_, \%albums_of) }
-      grep {; $touched{$_} } $self->ids->@*
+      grep {; $touched{$_} } map {; $_->{id} } ($request->{photos} // [])->@*
     ],
     albums     => _album_list(@albums),
     new_albums => \%slug_for_key,
-    ($self->album ? (album => $self->_album_record) : ()),
+    ($editing ? (album => $self->_album_record($editing)) : ()),
   };
 }
 

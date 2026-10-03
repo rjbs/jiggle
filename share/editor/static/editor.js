@@ -1,5 +1,10 @@
-// jiggle's editor: a contact sheet of one batch, and a sidebar for editing
-// the selected photos.  -- claude, 2026-09-30
+// jiggle's editor: a contact sheet of a batch chosen by a query, and a
+// sidebar for editing the selected photos; or, with no query, a list of the
+// library's albums.  -- claude, 2026-09-30
+//
+// The batch belongs to the page: the server answers a query with photos,
+// and the page keeps them until it asks again (a new query, or Refresh), so
+// photos don't drop out of the batch as they're edited.
 //
 // The page keeps each photo as it was loaded from disk ("saved"), and a map
 // of edits: for each photo, the fields whose values differ from saved.  A
@@ -9,7 +14,7 @@
 "use strict";
 
 const state = {
-  label:    "",
+  query:    null,        // the batch's query, or null for the album list
   photos:   [],          // the batch, in order, as loaded from disk
   byId:     new Map(),
   albums:   [],          // every album in the library: { slug, title }
@@ -144,12 +149,16 @@ function applyOrder() {
 
 const inAlbum = (p) => !state.album || current(p, "albums").includes(state.album.slug);
 
-async function load() {
-  const res = await fetch("/api/batch");
-  if (!res.ok) throw new Error(`loading the batch: ${res.status}`);
-  const data = await res.json();
+// Fetches a batch, returning its data, or throwing the server's complaint.
+async function fetchBatch(params) {
+  const res = await fetch(`/api/batch?${new URLSearchParams(params)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `loading the batch: ${res.status}`);
+  return data;
+}
 
-  state.label  = data.label;
+function adopt(data) {
+  state.query  = data.query;
   state.photos = data.photos;
   state.byId   = new Map(data.photos.map(p => [p.id, p]));
   state.albums = data.albums;
@@ -160,6 +169,55 @@ async function load() {
   for (const id of [...state.selected]) {
     if (!state.byId.has(id)) state.selected.delete(id);
   }
+  refreshTagList();
+  refreshAlbumList();
+}
+
+// Asks whether unwritten edits can be thrown away, if there are any.
+function mayDiscard() {
+  if (!unwritten()) return true;
+  return confirm("You have changes that aren't written.  Discard them?");
+}
+
+function discardEdits() {
+  state.edits.clear();
+  state.albumEdits = {};
+  state.newAlbums.clear();
+}
+
+// Shows the batch a query picks.  With keep, the selection is kept for
+// photos still in it, as for Refresh.
+async function runQuery(q, { push = true, keep = false } = {}) {
+  if (!mayDiscard()) return;
+
+  let data;
+  setStatus("loading…");
+  try {
+    data = await fetchBatch({ q });
+  } catch (e) {
+    setStatus(e.message, true);
+    return;
+  }
+
+  discardEdits();
+  if (!keep) { state.selected.clear(); state.anchor = null; }
+  adopt(data);
+
+  const url = `/?${new URLSearchParams({ q: data.query })}`;
+  if (push) history.pushState({ q: data.query }, "", url);
+  else history.replaceState({ q: data.query }, "", url);
+
+  $("#query").value = data.query;
+  document.title = `jiggle: ${data.query}`;
+  setStatus(`${data.photos.length} photo(s)`);
+  renderSheet();
+  renderSidebar();
+  refreshWriteButton();
+}
+
+function refresh() {
+  if (state.query === null || unwritten()) return;
+  runQuery(state.query, { push: false, keep: true });
 }
 
 function replaceSaved(record) {
@@ -217,7 +275,13 @@ function thumbFor(p) {
 }
 
 function renderSheet() {
-  $("#sheet").replaceChildren(...state.photos.map(thumbFor));
+  const sheet = $("#sheet");
+  sheet.classList.remove("albums");
+  if (!state.photos.length) {
+    sheet.replaceChildren(el("p", { class: "empty", text: "No photos match." }));
+    return;
+  }
+  sheet.replaceChildren(...state.photos.map(thumbFor));
 }
 
 function refreshThumb(id) {
@@ -266,7 +330,7 @@ function clickThumb(ev, id) {
 let drag = null;
 
 function sheetPointerDown(ev) {
-  if (ev.button !== 0 || state.frozen) return;
+  if (ev.button !== 0 || state.frozen || state.query === null) return;
   const sheet = $("#sheet");
   const thumb = ev.target.closest(".thumb");
 
@@ -647,6 +711,12 @@ function albumsField(photos) {
   });
 }
 
+function refreshTagList() {
+  const list = el("datalist", { id: "all-tags" }, state.tags.map(t => el("option", { value: t })));
+  const old = document.getElementById("all-tags");
+  if (old) old.replaceWith(list); else document.body.append(list);
+}
+
 function refreshAlbumList() {
   const titles = [ ...state.albums.map(a => a.title), ...state.newAlbums.values() ];
   const list = el("datalist", { id: "all-albums" }, titles.map(t => el("option", { value: t })));
@@ -848,6 +918,7 @@ function refreshWriteButton() {
   const n = state.edits.size;
   const b = $("#write");
   b.disabled = state.frozen || !unwritten();
+  $("#refresh").disabled = state.frozen || state.query === null || unwritten();
   const what = [ n ? `${n}` : null, albumDirty() ? "album" : null ].filter(Boolean).join(" + ");
   b.textContent = what ? `Write changes (${what})` : "Write changes";
 }
@@ -880,12 +951,16 @@ async function write() {
     return { id, version: p.version, changes };
   });
   const newAlbums = [ ...used ].map(key => ({ key, title: state.newAlbums.get(key) }));
-  const album = albumDirty()
-    ? { version: state.album.version, changes: { ...state.albumEdits } }
+  // In album mode, the album is always named, so it comes back as written,
+  // with any photos taken out of it; its version is checked only if it has
+  // changes.
+  const album = state.album
+    ? { slug: state.album.slug, version: state.album.version, changes: { ...state.albumEdits } }
     : undefined;
+  const albumChanged = albumDirty();
 
   freeze(true);
-  setStatus(`writing ${sent.length} photo(s)${album ? " and the album" : ""}…`);
+  setStatus(`writing ${sent.length} photo(s)${albumChanged ? " and the album" : ""}…`);
 
   let res, data;
   try {
@@ -933,7 +1008,7 @@ async function write() {
   $("#note").value = "";
 
   setStatus(data.commit
-    ? `committed ${data.commit}: ${[ data.photos.length ? `${data.photos.length} photo(s)` : null, album ? "the album" : null ].filter(Boolean).join(" and ")}`
+    ? `committed ${data.commit}: ${[ data.photos.length ? `${data.photos.length} photo(s)` : null, albumChanged ? "the album" : null ].filter(Boolean).join(" and ")}`
     : "nothing needed changing");
   renderSheet();
   renderSidebar();
@@ -941,16 +1016,21 @@ async function write() {
 }
 
 async function reloadPhotos(ids, album = false) {
-  const res = await fetch("/api/batch");
-  if (!res.ok) { setStatus(`reloading failed: ${res.status}`, true); return; }
-  const data = await res.json();
-  const fresh = new Map(data.photos.map(p => [p.id, p]));
+  let photos, albumData;
+  try {
+    if (ids.length) photos = (await fetchBatch({ ids: ids.join(",") })).photos;
+    if (album) albumData = (await fetchBatch({ q: `album:${state.album.slug}` })).album;
+  } catch (e) {
+    setStatus(`reloading failed: ${e.message}`, true);
+    return;
+  }
+  const fresh = new Map((photos || []).map(p => [p.id, p]));
   for (const id of ids) {
     if (fresh.has(id)) replaceSaved(fresh.get(id));
     state.edits.delete(id);
   }
   if (album) {
-    state.album = data.album || null;
+    state.album = albumData || null;
     state.albumEdits = {};
     applyOrder();
   }
@@ -970,7 +1050,7 @@ function keydown(ev) {
     return;
   }
 
-  if (ev.target.closest("input, textarea, select")) return;
+  if (ev.target.closest("input, textarea, select") || state.query === null) return;
 
   if ((ev.metaKey || ev.ctrlKey) && ev.key === "a") {
     ev.preventDefault();
@@ -982,6 +1062,77 @@ function keydown(ev) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The album list, shown when there's no query
+
+async function showAlbums({ push = true } = {}) {
+  if (!mayDiscard()) return;
+
+  let res, data;
+  try {
+    res = await fetch("/api/albums");
+    data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.status);
+  } catch (e) {
+    setStatus(`loading the albums: ${e.message}`, true);
+    return;
+  }
+
+  discardEdits();
+  Object.assign(state, { query: null, photos: [], byId: new Map(), album: null, selected: new Set(), anchor: null });
+  if (push) history.pushState({ q: null }, "", "/");
+  else history.replaceState({ q: null }, "", "/");
+
+  $("#query").value = "";
+  document.title = "jiggle: albums";
+  setStatus("");
+  renderAlbumList(data.albums);
+  refreshWriteButton();
+}
+
+function renderAlbumList(albums) {
+  const counts = (a) => [
+    a.published ? `${a.published} published` : null,
+    a.pending   ? `${a.pending} pending`     : null,
+    a.private   ? `${a.private} private`     : null,
+  ].filter(Boolean).join(" · ") || "empty";
+
+  const cards = albums.map(a => el("a", {
+      class: "album", href: `/?q=album:${encodeURIComponent(a.slug)}`, "data-title": a.title.toLowerCase(),
+      onclick: (ev) => { ev.preventDefault(); runQuery(`album:${a.slug}`); },
+    },
+    a.cover ? el("img", { src: `/r/${a.cover}/h480.webp`, loading: "lazy", alt: "" }) : el("div", { class: "nocover" }),
+    el("div", { class: "title", text: a.title }),
+    el("div", { class: `counts${a.published ? "" : " unpublished"}`, text: counts(a) }),
+  ));
+
+  const sheet = $("#sheet");
+  sheet.classList.add("albums");
+  sheet.replaceChildren(...cards);
+
+  const filter = el("input", { type: "search", placeholder: "filter by title" });
+  filter.addEventListener("input", () => {
+    const want = filter.value.trim().toLowerCase();
+    for (const card of sheet.querySelectorAll(".album")) card.hidden = !card.dataset.title.includes(want);
+  });
+
+  const quick = (q) => el("button", { type: "button", class: "text", text: q, onclick: () => runQuery(q) });
+  $("#sidebar").replaceChildren(
+    el("h2", { text: `${albums.length} album(s)` }),
+    el("div", { class: "field" }, filter),
+    el("p", { class: "empty", text:
+      "Albums with nothing published are listed too, though the site leaves them out.  Open one to edit it, or type a query above." }),
+    el("div", { class: "row quick" }, quick("pending limit:50"), quick("private")),
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function go(q) {
+  q = q.trim();
+  return q === "" ? showAlbums() : runQuery(q);
+}
+
 async function start() {
   const sheet = $("#sheet");
   sheet.addEventListener("pointerdown", sheetPointerDown);
@@ -989,27 +1140,25 @@ async function start() {
   sheet.addEventListener("pointerup", sheetPointerUp);
   document.addEventListener("keydown", keydown);
   $("#write").addEventListener("click", write);
+  $("#refresh").addEventListener("click", refresh);
+  $("#albums").addEventListener("click", () => showAlbums());
+  $("#query-form").addEventListener("submit", (ev) => { ev.preventDefault(); go($("#query").value); });
 
   window.addEventListener("beforeunload", (ev) => {
     if (unwritten()) { ev.preventDefault(); ev.returnValue = ""; }
   });
 
-  try {
-    await load();
-  } catch (e) {
-    setStatus(e.message, true);
-    return;
-  }
+  // Back and Forward move between queries.  Unwritten edits are kept if
+  // the move is declined, though the address bar has already moved.
+  window.addEventListener("popstate", () => {
+    const q = new URLSearchParams(location.search).get("q");
+    if (q) runQuery(q, { push: false });
+    else showAlbums({ push: false });
+  });
 
-  const list = el("datalist", { id: "all-tags" }, state.tags.map(t => el("option", { value: t })));
-  document.body.append(list);
-  refreshAlbumList();
-
-  $("#label").textContent = state.label;
-  document.title = `jiggle editor: ${state.label}`;
-  renderSheet();
-  renderSidebar();
-  refreshWriteButton();
+  const q = new URLSearchParams(location.search).get("q");
+  if (q) await runQuery(q, { push: false });
+  else await showAlbums({ push: false });
 }
 
 start();

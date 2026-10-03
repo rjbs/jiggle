@@ -17,15 +17,8 @@ package Recording::Derive {
 }
 
 sub editor_for (%arg) {
-  my $ids   = delete $arg{ids};
-  my $album = delete $arg{album};
   my ($library) = library_with(%arg);
-  my $editor = Jiggle::Editor->new({
-    library => $library,
-    ids     => $ids,
-    derive  => Recording::Derive->new,
-    ($album ? (album => $album) : ()),
-  });
+  my $editor = Jiggle::Editor->new({ library => $library, derive => Recording::Derive->new });
   return ($editor, Test::Mojo->new($editor->app));
 }
 
@@ -41,7 +34,7 @@ sub refused_ok ($t, $path) {
 }
 
 subtest 'nothing without the token' => sub {
-  my ($editor, $t) = editor_for(photos => [ { id => 'aaaa0001' } ], ids => [ 'aaaa0001' ]);
+  my ($editor, $t) = editor_for(photos => [ { id => 'aaaa0001' } ]);
 
   refused_ok($t, $_) for '/', '/api/batch', '/r/aaaa0001/h480.webp', '/static/editor.js';
   $t->get_ok('/?token=wrong')->status_is(403, 'a wrong token is refused');
@@ -51,7 +44,7 @@ subtest 'nothing without the token' => sub {
     ->header_like('Set-Cookie', qr/SameSite=Strict/i, '...sets a strict cookie');
   $t->get_ok('/')->status_is(200, '...which lets the page load')
     ->content_like(qr/<title>/);
-  $t->get_ok('/api/batch')->status_is(200, '...and the data');
+  $t->get_ok('/api/batch?q=all')->status_is(200, '...and the data');
 };
 
 subtest 'the batch, as it is on disk' => sub {
@@ -63,11 +56,10 @@ subtest 'the batch, as it is on disk' => sub {
       { id => 'cccc0003', title => 'not in the batch' },
     ],
     albums => [ { slug => 'trip', title => 'Trip', photos => [ 'bbbb0002', 'cccc0003' ] } ],
-    ids => [ 'bbbb0002', 'aaaa0001' ],
   );
 
-  $t->get_ok('/api/batch')->status_is(200)
-    ->json_is('/photos/0/id', 'bbbb0002', 'in batch order')
+  $t->get_ok('/api/batch?ids=bbbb0002,aaaa0001')->status_is(200)
+    ->json_is('/photos/0/id', 'bbbb0002', 'in the order asked')
     ->json_is('/photos/0/albums', [ 'trip' ], 'album membership')
     ->json_is('/photos/0/visibility', 'private')
     ->json_is('/photos/1/id', 'aaaa0001')
@@ -82,17 +74,75 @@ subtest 'the batch, as it is on disk' => sub {
 
   my $meta = $editor->library->meta_path('aaaa0001');
   $meta->spew_utf8($meta->slurp_utf8 =~ s/^title = "first"/title = "edited"/mr);
-  $t->get_ok('/api/batch')->json_is('/photos/1/title', 'edited', 'a reload reads the file again');
+  $t->get_ok('/api/batch?ids=bbbb0002,aaaa0001')->json_is('/photos/1/title', 'edited', 'a reload reads the file again');
+};
+
+subtest 'queries' => sub {
+  my ($editor, $t) = signed_in(
+    photos => [
+      { id => 'aaaa0001', pending => 1, taken => '2026-09-02T10:00:00' },
+      { id => 'bbbb0002', pending => 1, taken => '2026-09-01T10:00:00' },
+      { id => 'cccc0003', visibility => 'private' },
+    ],
+  );
+  my $ids = sub ($q) {
+    $t->get_ok('/api/batch?q=' . Mojo::Util::url_escape($q))->status_is(200);
+    return [ map {; $_->{id} } $t->tx->res->json->{photos}->@* ];
+  };
+
+  is_deeply($ids->('pending'), [ 'bbbb0002', 'aaaa0001' ], 'pending, oldest first');
+  is_deeply($ids->('  pending   limit:1 '), [ 'bbbb0002' ], 'limited, with odd spacing');
+  is($t->tx->res->json->{query}, 'pending limit:1', '...and the query comes back tidied');
+  is_deeply($ids->('private'), [ 'cccc0003' ], 'private');
+
+  # A photo added (as by "jiggle ingest") while the editor is open is found.
+  my $new = $editor->library->meta_path('dddd0004');
+  $new->parent->mkpath;
+  $new->spew_utf8(meta_of($editor, 'aaaa0001') =~ s/aaaa0001/dddd0004/gr);
+  is_deeply($ids->('pending'), [ 'bbbb0002', 'aaaa0001', 'dddd0004' ], 'a photo added since is found');
+
+  for my $case ([ '', qr/at least one term/ ], [ 'pendng', qr/unknown query term: pendng/ ],
+                [ 'album:nope', qr/no album named nope/ ]) {
+    my ($q, $want) = @$case;
+    $t->get_ok('/api/batch?q=' . Mojo::Util::url_escape($q))
+      ->status_is(400)->json_like('/error', $want, "refused: '$q'");
+  }
+};
+
+subtest 'the query survives signing in' => sub {
+  my ($editor, $t) = editor_for(photos => [ { id => 'aaaa0001' } ]);
+  $t->get_ok('/?token=' . $editor->token . '&q=pending+limit:5')->status_is(302)
+    ->header_is(Location => '/?q=pending+limit%3A5');
+};
+
+subtest 'the album list' => sub {
+  my ($editor, $t) = signed_in(
+    photos => [
+      { id => 'aaaa0001' },
+      { id => 'bbbb0002', visibility => 'private' },
+      { id => 'cccc0003', visibility => 'private', pending => 1 },
+    ],
+    albums => [
+      { slug => 'zoo',    title => 'Zoo',    photos => [ 'aaaa0001', 'bbbb0002' ], cover => 'bbbb0002' },
+      { slug => 'hidden', title => 'Hidden', photos => [ 'cccc0003' ] },
+    ],
+  );
+
+  $t->get_ok('/api/albums')->status_is(200)
+    ->json_is('/albums/0', { slug => 'hidden', title => 'Hidden', created => undef, cover => 'cccc0003',
+                             published => 0, pending => 1, private => 0 }, 'an album with nothing published is listed')
+    ->json_is('/albums/1', { slug => 'zoo', title => 'Zoo', created => undef, cover => 'bbbb0002',
+                             published => 1, pending => 0, private => 1 }, 'by title, with counts');
 };
 
 subtest 'renditions' => sub {
   my ($editor, $t) = signed_in(
     photos => [ { id => 'aaaa0001' }, { id => 'cccc0003' } ],
-    ids    => [ 'aaaa0001' ],
   );
 
   $t->get_ok('/r/aaaa0001/h480.webp')->status_is(200)->content_is('placeholder');
-  $t->get_ok('/r/cccc0003/h480.webp')->status_is(404, 'only photos in the batch');
+  $t->get_ok('/r/cccc0003/h480.webp')->status_is(200, 'any photo in the library');
+  $t->get_ok('/r/zzzz9999/h480.webp')->status_is(404, 'but no other');
   $t->get_ok('/r/aaaa0001/og.jpg')->status_is(404, 'only renditions the editor uses');
 };
 
@@ -120,7 +170,7 @@ sub editing (%arg) {
 }
 
 sub version_of ($t, $id) {
-  $t->get_ok('/api/batch');
+  $t->get_ok("/api/batch?ids=$id");
   my ($photo) = grep {; $_->{id} eq $id } $t->tx->res->json->{photos}->@*;
   return $photo->{version};
 }
@@ -138,7 +188,7 @@ sub meta_of ($editor, $id) { $editor->library->meta_path($id)->slurp_utf8 }
 
 sub writes_ok ($desc, $spec, $changes, @want) {
   subtest "writes: $desc" => sub {
-    my ($editor, $t) = editing(photos => [ { id => 'aaaa0001', %$spec } ], ids => [ 'aaaa0001' ]);
+    my ($editor, $t) = editing(photos => [ { id => 'aaaa0001', %$spec } ]);
     my $result = write_one($t, 'aaaa0001', $changes);
     $t->status_is(200);
     like(meta_of($editor, 'aaaa0001'), $_) for @want;
@@ -150,7 +200,7 @@ sub writes_ok ($desc, $spec, $changes, @want) {
 
 sub refuses_ok ($desc, $spec, $changes, $want_error) {
   subtest "refuses: $desc" => sub {
-    my ($editor, $t) = editing(photos => [ { id => 'aaaa0001', %$spec } ], ids => [ 'aaaa0001' ]);
+    my ($editor, $t) = editing(photos => [ { id => 'aaaa0001', %$spec } ]);
     my $before = meta_of($editor, 'aaaa0001');
     my $result = write_one($t, 'aaaa0001', $changes);
     $t->status_is(400);
@@ -181,7 +231,6 @@ refuses_ok('privacy for no location', {}, { location_private => 1 }, qr/no locat
 subtest 'the commit' => sub {
   my ($editor, $t) = editing(
     photos => [ { id => 'aaaa0001' }, { id => 'bbbb0002' }, { id => 'cccc0003' } ],
-    ids    => [ 'aaaa0001', 'bbbb0002' ],
   );
 
   # Unrelated work in progress in meta/ stays out of the commit.
@@ -208,7 +257,7 @@ subtest 'the commit' => sub {
 };
 
 subtest 'a turned photo has its renditions remade' => sub {
-  my ($editor, $t) = editing(photos => [ { id => 'aaaa0001' }, { id => 'bbbb0002' } ], ids => [ 'aaaa0001', 'bbbb0002' ]);
+  my ($editor, $t) = editing(photos => [ { id => 'aaaa0001' }, { id => 'bbbb0002' } ]);
   $t->post_ok('/api/write', json => {
     photos => [
       { id => 'aaaa0001', version => version_of($t, 'aaaa0001'), changes => { rotate => 90 } },
@@ -219,7 +268,7 @@ subtest 'a turned photo has its renditions remade' => sub {
 };
 
 subtest 'changed on disk since loading' => sub {
-  my ($editor, $t) = editing(photos => [ { id => 'aaaa0001' }, { id => 'bbbb0002' } ], ids => [ 'aaaa0001', 'bbbb0002' ]);
+  my ($editor, $t) = editing(photos => [ { id => 'aaaa0001' }, { id => 'bbbb0002' } ]);
   my ($va, $vb) = (version_of($t, 'aaaa0001'), version_of($t, 'bbbb0002'));
 
   my $meta = $editor->library->meta_path('bbbb0002');
@@ -236,19 +285,19 @@ subtest 'changed on disk since loading' => sub {
   like(meta_of($editor, 'aaaa0001'), qr/^title = ""$/m, 'and nothing else is written either');
 };
 
-subtest 'unchanged, and outside the batch' => sub {
-  my ($editor, $t) = editing(photos => [ { id => 'aaaa0001', title => 'same' }, { id => 'cccc0003' } ], ids => [ 'aaaa0001' ]);
+subtest 'unchanged, and not in the library' => sub {
+  my ($editor, $t) = editing(photos => [ { id => 'aaaa0001', title => 'same' }, { id => 'cccc0003' } ]);
 
   my $head = git($editor->library, 'rev-parse HEAD');
   is(write_one($t, 'aaaa0001', { title => 'same' })->{commit}, undef, 'no change, no commit');
   is(git($editor->library, 'rev-parse HEAD'), $head, '...and HEAD is where it was');
 
-  $t->post_ok('/api/write', json => { photos => [ { id => 'cccc0003', version => 'x', changes => { title => 'no' } } ] })
-    ->status_is(400)->json_like('/error', qr/not in this batch/);
+  $t->post_ok('/api/write', json => { photos => [ { id => 'zzzz9999', version => 'x', changes => { title => 'no' } } ] })
+    ->status_is(400)->json_like('/error', qr/no photo zzzz9999/);
 };
 
 subtest 'writing needs the token' => sub {
-  my ($editor, $t) = editor_for(photos => [ { id => 'aaaa0001' } ], ids => [ 'aaaa0001' ]);
+  my ($editor, $t) = editor_for(photos => [ { id => 'aaaa0001' } ]);
   $t->post_ok('/api/write', json => { photos => [] })->status_is(403);
 };
 
@@ -278,7 +327,6 @@ sub album_edit_ok ($desc, $albums, $changes, $new_albums, $want) {
     my ($editor, $t) = editing(
       photos => [ map {; { id => $_ } } qw( aaaa0001 bbbb0002 cccc0003 ) ],
       albums => $albums,
-      ids    => [ qw( aaaa0001 bbbb0002 cccc0003 ) ],
     );
     my $result = write_albums($t, $changes, @$new_albums);
     $t->status_is(200) or diag explain $result;
@@ -318,7 +366,6 @@ subtest 'albums: the details' => sub {
   my ($editor, $t) = editing(
     photos => [ map {; { id => $_ } } qw( aaaa0001 bbbb0002 ) ],
     albums => [ $TRIP ],
-    ids    => [ qw( aaaa0001 bbbb0002 ) ],
   );
 
   # A hand edit to the album file after loading is merged, not lost.
@@ -350,18 +397,16 @@ sub album_mode {
     photos => [ map {; { id => $_ } } qw( aaaa0001 bbbb0002 cccc0003 dddd0004 ) ],
     albums => [ { slug => 'trip', title => 'Trip', cover => 'aaaa0001',
                   photos => [ qw( aaaa0001 bbbb0002 cccc0003 ) ] } ],
-    ids    => [ qw( aaaa0001 bbbb0002 cccc0003 ) ],
-    album  => 'trip',
   );
 }
 
 # Writes changes to the album, and to its photos' albums (each id => { add,
 # remove }), as loaded.
 sub write_album ($t, $album_changes, $photo_changes = {}) {
-  $t->get_ok('/api/batch');
+  $t->get_ok('/api/batch?q=album:trip');
   my $version = $t->tx->res->json->{album}{version};
   $t->post_ok('/api/write', json => {
-    album  => { version => $version, changes => $album_changes },
+    album  => { slug => 'trip', version => $version, changes => $album_changes },
     photos => [
       map {; { id => $_, version => version_of($t, $_), changes => { albums => $photo_changes->{$_} } } }
       sort keys %$photo_changes
@@ -427,29 +472,28 @@ album_write_refused('the slug', { slug => 'elsewhere' }, {}, qr/can't change slu
 
 subtest 'album mode: the album comes with the batch' => sub {
   my ($editor, $t) = album_mode();
-  $t->get_ok('/api/batch')
+  $t->get_ok('/api/batch?q=album:trip')
     ->json_is('/album/slug', 'trip')
     ->json_is('/album/title', 'Trip')
     ->json_is('/album/cover', 'aaaa0001')
     ->json_is('/album/photos', \@ABC);
   like($t->tx->res->json->{album}{version}, qr/\A[0-9a-f]{40}\z/, 'with a version');
 
-  my ($plain, $t2) = signed_in(photos => [ { id => 'aaaa0001' } ], ids => [ 'aaaa0001' ]);
-  $t2->get_ok('/api/batch')->json_hasnt('/album', 'not otherwise');
-  $t2->post_ok('/api/write', json => { album => { version => 'x', changes => { title => 'no' } } })
-    ->status_is(400)->json_like('/error', qr/not editing an album/);
+  $t->get_ok('/api/batch?q=album:trip limit:5')->json_hasnt('/album', 'not with another term');
+  $t->post_ok('/api/write', json => { album => { slug => 'nope', version => 'x', changes => { title => 'no' } } })
+    ->status_is(400)->json_like('/error', qr/no album nope/);
 };
 
 subtest 'album mode: the album changed on disk since loading' => sub {
   my ($editor, $t) = album_mode();
-  $t->get_ok('/api/batch');
+  $t->get_ok('/api/batch?q=album:trip');
   my $version = $t->tx->res->json->{album}{version};
 
   my $file = $editor->library->albums_dir->child('trip.toml');
   $file->spew_utf8($file->slurp_utf8 =~ s/^title = "Trip"/title = "By Hand"/mr);
 
   $t->post_ok('/api/write', json => {
-    album  => { version => $version, changes => { description => 'mine' } },
+    album  => { slug => 'trip', version => $version, changes => { description => 'mine' } },
     photos => [ { id => 'aaaa0001', version => version_of($t, 'aaaa0001'), changes => { title => 'mine' } } ],
   })->status_is(409)->json_is('/album_conflict', 1)->json_is('/conflicts', []);
 

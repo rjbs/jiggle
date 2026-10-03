@@ -18,7 +18,7 @@ sub description {
   files directly, so it works only on this machine, and is never published.
 
     pending  private  public  all
-    album:SLUG  tag:TAG  year:YYYY  id:ID
+    album:SLUG  tag:TAG  year:YYYY  id:ID  limit:N
 
   For example, "jiggle sheet private --group flickr-privacy" is the page for
   reviewing private photos.  The page goes in the library's .jiggle/sheets/
