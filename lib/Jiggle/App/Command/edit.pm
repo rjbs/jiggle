@@ -19,6 +19,9 @@ sub description {
 
   For example, "jiggle edit pending" reviews newly ingested photos.
 
+  Given exactly one term, album:SLUG, it edits the album too: its title,
+  description, cover, and order.
+
   END
 }
 
