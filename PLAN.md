@@ -338,15 +338,26 @@ captioning 200 photos publishes nothing, and a batch can be released in
 parts.  Pending is its own key, not a visibility, because visibility is one
 of the things decided during review.
 
-**Selecting a batch** is on the command line, with a small query language:
+**Selecting a batch** is by a small query language, typed into the page or
+given on the command line:
 
-    jiggle edit pending
+    jiggle edit pending limit:50
     jiggle edit private                 # reviewing private photos
     jiggle edit album:berlin-2026
     jiggle edit tag:high-st year:2008
+    jiggle edit                         # the album list
 
-The batch is fixed when the session starts, a list of ids rather than a live
-query, so photos don't leave the contact sheet when they're released.
+The batch belongs to the page: a list of ids rather than a live query, so
+photos don't leave the contact sheet when they're released.  Refresh runs
+the query again (once everything is written), which is how a long pending
+queue is worked through fifty at a time.  The server reads the library
+afresh for every query, so photos ingested while the editor is open are
+found.  With no query, the page lists every album, including ones with
+nothing published; opening one is the query `album:SLUG`, which edits the
+album itself, too: its title, description, cover, and order.
+
+The editor edits metadata and nothing else: ingest, remove, build, and sync
+stay on the command line.
 
 **Viewing and editing.**  A contact sheet of the batch, from renditions in
 `derived/` (derive already covers private and pending photos, so no build is
@@ -408,8 +419,8 @@ photos with no EXIF time come due here.
 5. Albums.
 6. The import helper.
 
-**Later, maybe:** location editing on a map, reordering albums and choosing
-covers, library-wide re-tagging, and picking a batch in the browser.
+**Later, maybe:** location editing on a map, dragging photos to reorder an
+album, and library-wide re-tagging.
 
 ## Importing from Flickr
 

@@ -8,7 +8,13 @@
 </head>
 <body>
   <header id="bar">
-    <h1>jiggle editor <span id="label"></span></h1>
+    <h1>jiggle</h1>
+    <button id="albums" type="button">Albums</button>
+    <form id="query-form">
+      <input id="query" type="search" spellcheck="false" autocomplete="off"
+        placeholder="pending  private  album:SLUG  tag:TAG  year:YYYY  id:ID  limit:N">
+    </form>
+    <button id="refresh" type="button" title="run the query again, once everything is written">Refresh</button>
     <span id="status"></span>
     <input id="note" type="text" placeholder="note for the commit (optional)">
     <button id="write" class="primary" type="button" disabled title="⌘S">Write changes</button>
