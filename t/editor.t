@@ -17,9 +17,15 @@ package Recording::Derive {
 }
 
 sub editor_for (%arg) {
-  my $ids = delete $arg{ids};
+  my $ids   = delete $arg{ids};
+  my $album = delete $arg{album};
   my ($library) = library_with(%arg);
-  my $editor = Jiggle::Editor->new({ library => $library, ids => $ids, derive => Recording::Derive->new });
+  my $editor = Jiggle::Editor->new({
+    library => $library,
+    ids     => $ids,
+    derive  => Recording::Derive->new,
+    ($album ? (album => $album) : ()),
+  });
   return ($editor, Test::Mojo->new($editor->app));
 }
 
@@ -332,6 +338,123 @@ subtest 'albums: the details' => sub {
 
   write_albums($t, { aaaa0001 => { add => [ 'nope' ] } });
   $t->status_is(400)->json_like('/error', qr/no album nope/);
+};
+
+#---------------------------------------------------------------------------
+# Album mode
+
+# An editor on the album "trip", of aaaa0001, bbbb0002, and cccc0003; the
+# library has dddd0004, too, outside it.
+sub album_mode {
+  return editing(
+    photos => [ map {; { id => $_ } } qw( aaaa0001 bbbb0002 cccc0003 dddd0004 ) ],
+    albums => [ { slug => 'trip', title => 'Trip', cover => 'aaaa0001',
+                  photos => [ qw( aaaa0001 bbbb0002 cccc0003 ) ] } ],
+    ids    => [ qw( aaaa0001 bbbb0002 cccc0003 ) ],
+    album  => 'trip',
+  );
+}
+
+# Writes changes to the album, and to its photos' albums (each id => { add,
+# remove }), as loaded.
+sub write_album ($t, $album_changes, $photo_changes = {}) {
+  $t->get_ok('/api/batch');
+  my $version = $t->tx->res->json->{album}{version};
+  $t->post_ok('/api/write', json => {
+    album  => { version => $version, changes => $album_changes },
+    photos => [
+      map {; { id => $_, version => version_of($t, $_), changes => { albums => $photo_changes->{$_} } } }
+      sort keys %$photo_changes
+    ],
+  });
+  return $t->tx->res->json;
+}
+
+sub album_write_ok ($desc, $album_changes, $photo_changes, $want) {
+  subtest "album mode writes: $desc" => sub {
+    my ($editor, $t) = album_mode();
+    my $result = write_album($t, $album_changes, $photo_changes);
+    $t->status_is(200) or return diag explain $result;
+
+    my $album = album_of($editor, 'trip');
+    for my $field (qw( title description cover photos )) {
+      next unless exists $want->{$field};
+      is_deeply($album->$field, $want->{$field}, $field);
+      is_deeply($result->{album}{$field}, $want->{$field}, "$field, as returned");
+    }
+    like(git($editor->library, 'log -1 --format=%s'), $want->{message}, 'the message') if $want->{message};
+    is(git($editor->library, 'status --porcelain'), '', 'everything committed');
+  };
+}
+
+sub album_write_refused ($desc, $album_changes, $photo_changes, $want_error) {
+  subtest "album mode refuses: $desc" => sub {
+    my ($editor, $t) = album_mode();
+    my $before = album_of($editor, 'trip')->as_toml;
+    write_album($t, $album_changes, $photo_changes);
+    $t->status_is(400)->json_like('/error', $want_error);
+    is(album_of($editor, 'trip')->as_toml, $before, 'the album is unchanged');
+  };
+}
+
+my @ABC = qw( aaaa0001 bbbb0002 cccc0003 );
+
+album_write_ok('title and description',
+  { title => '  Trip, renamed ', description => "two\nlines" }, {},
+  { title => 'Trip, renamed', description => "two\nlines", photos => \@ABC,
+    message => qr/\Aedit album trip: description, title\n*\z/ });
+
+album_write_ok('cover', { cover => 'cccc0003' }, {}, { cover => 'cccc0003' });
+
+album_write_ok('order', { order => [ qw( cccc0003 aaaa0001 bbbb0002 ) ] }, {},
+  { photos => [ qw( cccc0003 aaaa0001 bbbb0002 ) ], cover => 'aaaa0001',
+    message => qr/\Aedit album trip: order\n*\z/ });
+
+album_write_ok('order, with a photo taken out at the same time',
+  { order => [ qw( cccc0003 aaaa0001 bbbb0002 ) ] }, { aaaa0001 => { remove => [ 'trip' ] } },
+  { photos => [ qw( cccc0003 bbbb0002 ) ], cover => 'cccc0003',
+    message => qr/\Aedit 1 photo\(s\): albums; edit album trip: order\n*\z/ });
+
+album_write_refused('an order missing a photo', { order => [ qw( aaaa0001 bbbb0002 ) ] }, {},
+  qr/must name the album's photos, each once/);
+album_write_refused('an order naming one twice', { order => [ @ABC, 'aaaa0001' ] }, {},
+  qr/must name the album's photos, each once/);
+album_write_refused('a cover from outside', { cover => 'dddd0004' }, {}, qr/isn't one of its photos/);
+album_write_refused('a cover taken out', { cover => 'bbbb0002' }, { bbbb0002 => { remove => [ 'trip' ] } },
+  qr/isn't one of its photos/);
+album_write_refused('an empty title', { title => '  ' }, {}, qr/must not be empty/);
+album_write_refused('the slug', { slug => 'elsewhere' }, {}, qr/can't change slug/);
+
+subtest 'album mode: the album comes with the batch' => sub {
+  my ($editor, $t) = album_mode();
+  $t->get_ok('/api/batch')
+    ->json_is('/album/slug', 'trip')
+    ->json_is('/album/title', 'Trip')
+    ->json_is('/album/cover', 'aaaa0001')
+    ->json_is('/album/photos', \@ABC);
+  like($t->tx->res->json->{album}{version}, qr/\A[0-9a-f]{40}\z/, 'with a version');
+
+  my ($plain, $t2) = signed_in(photos => [ { id => 'aaaa0001' } ], ids => [ 'aaaa0001' ]);
+  $t2->get_ok('/api/batch')->json_hasnt('/album', 'not otherwise');
+  $t2->post_ok('/api/write', json => { album => { version => 'x', changes => { title => 'no' } } })
+    ->status_is(400)->json_like('/error', qr/not editing an album/);
+};
+
+subtest 'album mode: the album changed on disk since loading' => sub {
+  my ($editor, $t) = album_mode();
+  $t->get_ok('/api/batch');
+  my $version = $t->tx->res->json->{album}{version};
+
+  my $file = $editor->library->albums_dir->child('trip.toml');
+  $file->spew_utf8($file->slurp_utf8 =~ s/^title = "Trip"/title = "By Hand"/mr);
+
+  $t->post_ok('/api/write', json => {
+    album  => { version => $version, changes => { description => 'mine' } },
+    photos => [ { id => 'aaaa0001', version => version_of($t, 'aaaa0001'), changes => { title => 'mine' } } ],
+  })->status_is(409)->json_is('/album_conflict', 1)->json_is('/conflicts', []);
+
+  is(album_of($editor, 'trip')->title, 'By Hand', 'the hand edit is kept');
+  like(meta_of($editor, 'aaaa0001'), qr/^title = ""$/m, 'and nothing else is written either');
 };
 
 done_testing;

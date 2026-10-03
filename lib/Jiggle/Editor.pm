@@ -47,6 +47,11 @@ has ids => (is => 'ro', required => 1);
 # A label for the batch, like the query that chose it.
 has label => (is => 'ro', default => '');
 
+# The slug of the album being edited, if the batch is an album; then the
+# album's own fields (title, description, cover, and order) can be edited
+# too.  See L</write_changes>.
+has album => (is => 'ro');
+
 has token => (
   is => 'lazy',
   default => sub {
@@ -82,6 +87,10 @@ This picks a batch with L<Jiggle::Query>, then serves an editor for it on
 127.0.0.1 until interrupted, printing its URL (with the token) and, if C<open>
 is true, opening it in a browser.  It dies if nothing matches.
 
+If the query is exactly one C<album:SLUG> term, the editor edits that album,
+too.  With any other term beside it, the batch is only part of the album, so
+the album isn't edited.
+
 =cut
 
 sub serve_query ($class, $library, $terms, $arg = {}) {
@@ -90,7 +99,14 @@ sub serve_query ($class, $library, $terms, $arg = {}) {
   my @ids = map {; $_->id } $query->photos;
   die "no photos match: @$terms\n" unless @ids;
 
-  my $editor = $class->new({ library => $library, ids => \@ids, label => "@$terms" });
+  my ($album) = @$terms == 1 ? $terms->[0] =~ /\Aalbum:(.+)\z/ : ();
+
+  my $editor = $class->new({
+    library => $library,
+    ids     => \@ids,
+    label   => "@$terms",
+    (defined $album ? (album => $album) : ()),
+  });
 
   my $listen = "http://127.0.0.1:" . ($arg->{port} // 3001);
   my $url    = "$listen/?token=" . $editor->token;
@@ -175,6 +191,10 @@ of when the editor started), for suggestions.  Each photo has a C<version>,
 the digest of its metadata file, which a write must present so that changes
 made to the file since it was loaded aren't overwritten.
 
+When editing an album, it has C<album>, too: its C<slug>, C<title>,
+C<description>, C<cover>, C<photos> (in order), and C<version>, the digest of
+its file.
+
 =cut
 
 sub batch_data ($self) {
@@ -191,6 +211,27 @@ sub batch_data ($self) {
     photos => \@photos,
     tags   => [ sort { fc $a cmp fc $b } keys %tags ],
     albums => _album_list(@albums),
+    ($self->album ? (album => $self->_album_record) : ()),
+  };
+}
+
+sub _album_file ($self) { $self->library->albums_dir->child($self->album . '.toml') }
+
+# The album being edited, as the page gets it, read from its file now; undef
+# if it's gone.
+sub _album_record ($self) {
+  my $file = $self->_album_file;
+  return undef unless -e $file;
+
+  my $bytes = $file->slurp_raw;
+  my $album = Jiggle::Album->from_toml_file($file);
+  return {
+    slug        => $album->slug,
+    title       => $album->title,
+    description => $album->description,
+    cover       => $album->cover,
+    photos      => [ $album->photos->@* ],
+    version     => Digest::SHA::sha1_hex($bytes),
   };
 }
 
@@ -256,12 +297,26 @@ it is now.  An album whose cover is removed gets its first photo as its cover.
 
 A photo whose rotation changes has its renditions remade before this returns.
 
+When editing an album, the request can change the album, too:
+
+  album => {
+    version => $version,
+    changes => { title => '...', description => '...', cover => $id, order => [ @ids ] },
+  }
+
+Its C<version> is checked like a photo's.  C<order> must name the album's
+photos, each once.  A photo removed from the album in the same request is
+left out of the order, and C<cover> must be one of the photos the album has
+afterward.
+
 The result has C<photos>, each written photo as L</batch_data> would give it,
 and C<commit>, the new commit's abbreviated id (undef if nothing changed, or
 F<meta> isn't a git repository).  It also has C<albums>, every album, and
-C<new_albums>, which maps each new album's key to its slug.  A failure has a C<status> (409 for a
-conflict, 400 for anything else) and an C<error>, and a conflict lists the
-photos in C<conflicts>.
+C<new_albums>, which maps each new album's key to its slug, and, when editing
+an album, C<album>, as L</batch_data> gives it.  A failure has a C<status>
+(409 for a conflict, 400 for anything else) and an C<error>, and a conflict
+lists the photos in C<conflicts>, and has C<album_conflict> true if the
+album's file had changed.
 
 =cut
 
@@ -292,6 +347,23 @@ sub write_changes ($self, $request) {
       title   => $title,
       created => datetime_with_offset(time),
     });
+  }
+
+  # Changes to the album being edited, checked now and applied with the
+  # membership changes below.
+  my (%album_change, $album_conflict);
+  if (my $edit = $request->{album}) {
+    return _failure(400, 'not editing an album') unless $self->album;
+    my $file = $self->_album_file;
+    if (! -e $file or Digest::SHA::sha1_hex($file->slurp_raw) ne ($edit->{version} // '')) {
+      $album_conflict = 1;
+    } else {
+      my %changes = ($edit->{changes} // {})->%*;
+      for my $field (sort keys %changes) {
+        my $error = _album_change(\%album_change, $album{ $self->album }, $field, $changes{$field});
+        return _failure(400, "album: $error") if $error;
+      }
+    }
   }
 
   my (%add_to, %remove_from);
@@ -339,14 +411,21 @@ sub write_changes ($self, $request) {
     }
   }
 
-  return _failure(409, 'changed on disk since loading: ' . join(q{, }, @conflicts),
-    conflicts => \@conflicts) if @conflicts;
+  if (@conflicts or $album_conflict) {
+    return _failure(409,
+      'changed on disk since loading: ' . join(q{, }, @conflicts, ($album_conflict ? 'the album' : ())),
+      conflicts      => \@conflicts,
+      album_conflict => $album_conflict ? Mojo::JSON::true : Mojo::JSON::false,
+    );
+  }
 
-  my @new_titles;
+  my (@new_titles, $album_edited);
   for my $slug (sort keys %album) {
-    my $old = $album{$slug};
+    my $old   = $album{$slug};
+    my $edits = $slug eq ($self->album // '') ? \%album_change : {};
+
     my %gone = map {; $_ => 1 } ($remove_from{$slug} // [])->@*;
-    my @photos = grep {; ! $gone{$_} } $old->photos->@*;
+    my @photos = grep {; ! $gone{$_} } ($edits->{order} // $old->photos)->@*;
     my %have = map {; $_ => 1 } @photos;
     push @photos, grep {; ! $have{$_}++ } ($add_to{$slug} // [])->@*;
 
@@ -354,9 +433,15 @@ sub write_changes ($self, $request) {
     next if ! $before{$slug} and ! @photos;
 
     my $cover = $old->cover;
+    if (exists $edits->{cover}) {
+      $cover = $edits->{cover};
+      return _failure(400, "album: the cover, $cover, isn't one of its photos")
+        unless grep {; $_ eq $cover } @photos;
+    }
     $cover = $photos[0] unless defined $cover and grep {; $_ eq $cover } @photos;
 
     my %arg = (%$old, photos => \@photos);
+    $arg{$_} = $edits->{$_} for grep {; exists $edits->{$_} } qw( title description );
     delete $arg{cover};
     $arg{cover} = $cover if defined $cover;
     my $new = Jiggle::Album->new(\%arg);
@@ -364,6 +449,7 @@ sub write_changes ($self, $request) {
     my $text = $new->as_toml;
     next if defined $before{$slug} and $text eq $before{$slug};
 
+    $album_edited = 1 if %$edits;
     push @new_titles, $new->title unless $before{$slug};
     push @plan, { file => $self->library->albums_dir->child("$slug.toml"), text => $text };
   }
@@ -377,8 +463,12 @@ sub write_changes ($self, $request) {
 
   my $commit;
   if (@plan) {
-    my $message = sprintf 'edit %d photo(s): %s',
-      scalar keys %touched, join q{, }, sort keys %fields_changed;
+    my @what;
+    push @what, sprintf 'edit %d photo(s): %s', scalar keys %touched, join q{, }, sort keys %fields_changed
+      if %touched;
+    push @what, sprintf 'edit album %s: %s', $self->album, join q{, }, sort keys %album_change
+      if $album_edited;
+    my $message = join '; ', @what;
     $message .= '; new album: ' . join q{, }, @new_titles if @new_titles;
     $message .= "\n\n$request->{note}" if ($request->{note} // '') =~ /\S/;
     $commit = $self->library->commit_meta($message, map {; $_->{file} } @plan);
@@ -399,7 +489,30 @@ sub write_changes ($self, $request) {
     ],
     albums     => _album_list(@albums),
     new_albums => \%slug_for_key,
+    ($self->album ? (album => $self->_album_record) : ()),
   };
+}
+
+# Checks one change to the album being edited, and records it, returning an
+# error, if any.
+sub _album_change ($change, $album, $field, $value) {
+  return "$field must be a string" if $field ne 'order' and (ref $value or ! defined $value);
+
+  if ($field eq 'title') {
+    $value =~ s/\A\s+|\s+\z//g;
+    return 'the title must not be empty' unless length $value;
+  }
+  elsif ($field eq 'order') {
+    return 'order must be a list of ids' unless ref $value eq 'ARRAY' and ! grep {; ref or ! defined } @$value;
+    return "order must name the album's photos, each once"
+      unless join("\0", sort @$value) eq join("\0", sort $album->photos->@*);
+  }
+  elsif ($field ne 'description' and $field ne 'cover') {
+    return "can't change $field";
+  }
+
+  $change->{$field} = $value;
+  return;
 }
 
 sub _album_list (@albums) {
