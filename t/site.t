@@ -59,6 +59,57 @@ sub never_published_ok ($desc, %unpublishable) {
 never_published_ok('private', visibility => 'private');
 never_published_ok('pending', visibility => 'pending');
 
+# An unlisted photo, unl00001, between two public ones, in an album with one
+# of them, and another, unl00002, alone in an album of its own.
+my ($unlisted_site, $udir) = built_site(
+  photos => [
+    { id => 'pub00001', taken => '2026-07-17T10:00:00+02:00', tags => [ 'vienna' ] },
+    { id => 'unl00001', taken => '2026-07-18T10:00:00+02:00', tags => [ 'vienna', 'secret' ],
+      location => { lat => 48.21, lon => 16.38 }, visibility => 'unlisted' },
+    { id => 'pub00002', taken => '2026-07-19T10:00:00+02:00', tags => [ 'vienna' ] },
+    { id => 'unl00002', taken => '2026-07-20T10:00:00+02:00', visibility => 'unlisted' },
+  ],
+  albums => [
+    { slug => 'trip',   title => 'Trip',   photos => [ 'unl00001', 'pub00001' ] },
+    { slug => 'hidden', title => 'Hidden', photos => [ 'unl00002' ] },
+  ],
+);
+
+sub unlisted_file_ok ($desc, $file, %want) {
+  my $path = $udir->child($file);
+  ok(-e $path, "$desc: $file exists") or return;
+  my $text = $path->slurp_utf8;
+  like($text, $_, "$desc: $file has $_") for ($want{has} // [])->@*;
+  unlike($text, $_, "$desc: $file lacks $_") for ($want{lacks} // [])->@*;
+}
+
+my $noindex   = qr{<meta name="robots" content="noindex">};
+my $links_unl = qr{href="[^"]*/p/unl00001/"};
+
+unlisted_file_ok('an unlisted photo has a page', 'p/unl00001/index.html',
+  has => [ $noindex ], lacks => [ qr/data-pagefind-body/ ]);
+unlisted_file_ok('...and embed data', 'p/unl00001/embed.json', has => [ qr{/img/unl00001/1024\.webp} ]);
+ok(-e $udir->child('img/unl00001/1024.webp'), '...and renditions');
+unlisted_file_ok('a listed photo is indexed', 'p/pub00001/index.html',
+  has => [ qr/data-pagefind-body/ ], lacks => [ $noindex ]);
+
+unlisted_file_ok('its album shows it', 'albums/trip/index.html', has => [ $links_unl ], lacks => [ $noindex ]);
+unlisted_file_ok('the home page omits it', 'index.html', lacks => [ $links_unl, qr{/albums/hidden/} ]);
+unlisted_file_ok('the feed omits it', 'feed.xml', lacks => [ $links_unl, qr{/albums/hidden/} ]);
+unlisted_file_ok('tags omit it', 'tags/vienna/index.html', lacks => [ $links_unl ]);
+ok(! -e $udir->child('tags/secret'), 'a tag only it has has no page');
+unlisted_file_ok('the archive omits it', '2026/07/index.html', lacks => [ $links_unl ]);
+unlisted_file_ok('the map omits it', 'map/photos.geojson', lacks => [ qr/unl00001/ ]);
+unlisted_file_ok('neighbors skip it', 'p/pub00002/index.html',
+  has => [ qr{href="/p/pub00001/"} ], lacks => [ $links_unl ]);
+unlisted_file_ok('...both ways', 'p/pub00001/index.html',
+  has => [ qr{href="/p/pub00002/"} ], lacks => [ $links_unl ]);
+
+unlisted_file_ok('an album of only unlisted photos has a page', 'albums/hidden/index.html',
+  has => [ qr{href="/p/unl00002/"}, $noindex ]);
+unlisted_file_ok('...but is not on the albums index', 'albums/index.html',
+  has => [ qr{/albums/trip/} ], lacks => [ qr{/albums/hidden/} ]);
+
 subtest 'a photo whose renditions are missing is left out' => sub {
   my $photos = [
     { id => 'good0001', taken => '2016-11-27T14:00:00' },

@@ -1,5 +1,6 @@
 % my ($w, $h) = $site->rendition_size($photo, '2048.webp');
-<article class="photo" data-pagefind-body data-pagefind-meta="image:<%= $site->rendition_url($photo, 'h480.webp') %>">
+% # Unlisted photos aren't marked for the search index, so they aren't in it.
+<article class="photo"<%== $photo->is_listed ? ' data-pagefind-body' : '' %> data-pagefind-meta="image:<%= $site->rendition_url($photo, 'h480.webp') %>">
   <figure>
 % if ($photo->is_video) {
 %   my ($vw, $vh) = $site->rendition_size($photo, 'video.mp4');

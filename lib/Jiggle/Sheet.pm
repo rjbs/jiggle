@@ -136,7 +136,7 @@ sub _tile ($self, $photo, $albums) {
   my $meta  = $library->meta_path($photo->id);
 
   my @flags = (
-    ($photo->is_published ? () : $photo->visibility),
+    ($photo->is_listed ? () : $photo->visibility),
     ($photo->is_video  ? 'video'   : ()),
   );
 

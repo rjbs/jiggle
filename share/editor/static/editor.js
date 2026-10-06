@@ -264,6 +264,7 @@ function thumbFor(p) {
       inAlbum(p) ? null : el("span", { class: "badge out", text: "out of album" }),
       current(p, "visibility") === "pending" ? el("span", { class: "badge pending", text: "pending" }) : null,
       current(p, "visibility") === "private" ? el("span", { class: "badge", text: "private" }) : null,
+      current(p, "visibility") === "unlisted" ? el("span", { class: "badge", text: "unlisted" }) : null,
       p.type === "video" ? el("span", { class: "badge", text: "▶" }) : null,
     ),
     el("figcaption", { text: title || p.file || p.id }),
@@ -536,7 +537,8 @@ function visibilityField(photos) {
   const select = el("select", {},
     mixed ? el("option", { value: "", text: "mixed", disabled: true }) : null,
     el("option", { value: "pending", text: "pending: not yet reviewed, so not published" }),
-    el("option", { value: "public",  text: "public: published" }),
+    el("option", { value: "public",   text: "public: published" }),
+    el("option", { value: "unlisted", text: "unlisted: published, but only albums link to it" }),
     el("option", { value: "private", text: "private: kept, never published" }),
   );
   select.value = mixed ? "" : values[0];
@@ -1092,6 +1094,7 @@ async function showAlbums({ push = true } = {}) {
 function renderAlbumList(albums) {
   const counts = (a) => [
     a.published ? `${a.published} published` : null,
+    a.unlisted  ? `${a.unlisted} unlisted`   : null,
     a.pending   ? `${a.pending} pending`     : null,
     a.private   ? `${a.private} private`     : null,
   ].filter(Boolean).join(" · ") || "empty";

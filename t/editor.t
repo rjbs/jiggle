@@ -130,9 +130,9 @@ subtest 'the album list' => sub {
 
   $t->get_ok('/api/albums')->status_is(200)
     ->json_is('/albums/0', { slug => 'hidden', title => 'Hidden', created => undef, cover => 'cccc0003',
-                             published => 0, pending => 1, private => 0 }, 'an album with nothing published is listed')
+                             published => 0, unlisted => 0, pending => 1, private => 0 }, 'an album with nothing published is listed')
     ->json_is('/albums/1', { slug => 'zoo', title => 'Zoo', created => undef, cover => 'bbbb0002',
-                             published => 1, pending => 0, private => 1 }, 'by title, with counts');
+                             published => 1, unlisted => 0, pending => 0, private => 1 }, 'by title, with counts');
 };
 
 subtest 'renditions' => sub {

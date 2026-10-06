@@ -48,7 +48,8 @@ makes a new library at the current format.
 
 - 1: the first.
 - 2 (2026-10-05): pending is a visibility.  In format 1, it was a key of its
-  own (`pending = true`) beside a visibility.
+  own (`pending = true`) beside a visibility.  Format 2 also allows
+  `unlisted` (added 2026-10-06, before any library used it).
 
 ## `originals/<shard>/<id>.<ext>`
 
@@ -85,7 +86,7 @@ title = "we've got legs"
 description = "Markdown; newlines are line breaks"
 taken = 2008-01-06T19:36:11       # TOML datetime; an offset only if known
 tags = ["high-st"]                # lowercase
-visibility = "public"             # or "private" or "pending"; see below
+visibility = "public"             # or "unlisted", "private", "pending"; see below
 rotate = 90                       # extra clockwise turn; usually absent
 added = 2008-01-06T21:32:33-05:00   # when it joined the collection
 flickr_id = "2173311823"          # imported photos only
@@ -118,9 +119,15 @@ private = true                    # never publish this location
 - `rotate` is a turn beyond what the file's EXIF orientation calls for, like a
   photo rotated by hand on Flickr.  Changing it remakes that photo's
   renditions.
-- `visibility` is `public` (published), `private` (kept, never published), or
-  `pending`: not yet reviewed, and so not published.  Ingest makes new photos
-  pending, and reviewing one in the editor makes it public or private.
+- `visibility` is `public` (published), `unlisted`, `private` (kept, never
+  published), or `pending`: not yet reviewed, and so not published.  Ingest
+  makes new photos pending, and reviewing one in the editor gives it one of
+  the others.  An unlisted photo has a page, renditions, and `embed.json`,
+  but nothing links to it except albums it's in: it's not on the home page,
+  in the feed, tags, the archive, the map, or search, and its page asks
+  search engines not to index it.  An album of nothing but unlisted photos
+  is itself unlisted.  Unlisted means unlinked, not secret: anyone with the
+  URL can see it.
   Imports from Flickr aren't pending: they were reviewed there.  Flickr's
   "friend & family" is imported as private, and the original value is kept
   in the raw record (below).

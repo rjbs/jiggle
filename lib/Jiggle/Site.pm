@@ -40,6 +40,13 @@ Private photos are treated as though they don't exist.  They're dropped when
 the photo list is first assembled, so no page, count, cover, map point, or
 feed can mention one.
 
+Unlisted photos have pages, but only albums link to them.  There are two
+lists of photos: C<published_photos>, every photo with a page, and
+C<photos>, the ones the site lists, which everything that lists photos (the
+home page, the feed, tags, the archive, the map, search, and the links
+between neighbors) uses.  Albums are made from the published photos, and an
+album of nothing but unlisted photos is itself unlisted.
+
 =cut
 
 has library => (is => 'ro', required => 1);
@@ -82,7 +89,7 @@ sub base_url   ($self) { ($self->config->{base_url} // '') =~ s{/+\z}{}r }
 #---------------------------------------------------------------------------
 # The model: everything the templates need, with private and pending photos removed.
 
-has photos => (
+has published_photos => (
   is => 'lazy',
   init_arg => undef,
   default  => sub ($self) {
@@ -117,6 +124,13 @@ has photos => (
   },
 );
 
+# The photos the site lists, in the same order.
+has photos => (
+  is => 'lazy',
+  init_arg => undef,
+  default  => sub ($self) { [ grep {; $_->is_listed } $self->published_photos->@* ] },
+);
+
 # Whether a photo's renditions all exist, by derive's manifest; with verify,
 # by the files themselves, too.
 sub _renditions_present ($self, $photo) {
@@ -132,7 +146,7 @@ sub _renditions_present ($self, $photo) {
 has _photo_by_id => (
   is => 'lazy',
   init_arg => undef,
-  default  => sub ($self) { return { map {; $_->id => $_ } $self->photos->@* } },
+  default  => sub ($self) { return { map {; $_->id => $_ } $self->published_photos->@* } },
 );
 
 # A TOML datetime as epoch seconds, or undef.  Without an offset, it's taken
@@ -170,10 +184,10 @@ moment come newest taken first, and anything with no date comes last.
 =cut
 
 sub home_items ($self, $n) {
-  my %in_album = map {; my $a = $_; map {; $_->id => 1 } $a->{photos}->@* } $self->albums->@*;
+  my %in_album = map {; my $a = $_; map {; $_->id => 1 } $a->{photos}->@* } $self->listed_albums->@*;
 
   my @items;
-  for my $album ($self->albums->@*) {
+  for my $album ($self->listed_albums->@*) {
     my $when = _instant($self->album_added($album)) // _instant($album->{created});
     push @items, { when => $when, item => $album, taken => '', name => fc $album->{title} };
   }
@@ -248,6 +262,7 @@ has albums => (
         cover  => $cover,
         photos => \@photos,
         created => $album->created,
+        listed  => (List::Util::any {; $_->is_listed } @photos) ? 1 : 0,
       };
     }
 
@@ -262,6 +277,13 @@ has albums => (
       } @albums
     ];
   },
+);
+
+# The albums the site lists: every one with a listed photo.
+has listed_albums => (
+  is => 'lazy',
+  init_arg => undef,
+  default  => sub ($self) { [ grep {; $_->{listed} } $self->albums->@* ] },
 );
 
 has _albums_for_photo => (
@@ -559,6 +581,7 @@ sub render_page ($self, $template, $vars) {
     content => Mojo::ByteStream->new($content),
     og      => $vars->{og} // ($vars->{photo} ? $self->opengraph($vars->{photo}) : undef),
     map     => ($template eq 'map' || $vars->{location}) ? 1 : 0,
+    noindex => $vars->{noindex} ? 1 : 0,
   });
 }
 
@@ -639,7 +662,7 @@ The renditions must already exist; see L<Jiggle::Derive>.
 
 sub build ($self) {
   my $w = $self->writer;
-  my @photos = $self->_phase('reading metadata', sub { $self->photos->@* });
+  my @photos = $self->_phase('reading metadata', sub { $self->published_photos->@* });
 
   my @home = $self->home_items(100);
   my $lead = $home[0];
@@ -721,6 +744,19 @@ sub _build_photo_pages ($self, $photos) {
     logger => $self->logger,
   });
 
+  # Each page links to the nearest listed photos, newer and older, so no
+  # listed page links to an unlisted one.  -- claude, 2026-10-06
+  my (@newer, @older, $last);
+  for my $i (keys @photos) {
+    $newer[$i] = $last;
+    $last = $photos[$i] if $photos[$i]->is_listed;
+  }
+  undef $last;
+  for my $i (reverse keys @photos) {
+    $older[$i] = $last;
+    $last = $photos[$i] if $photos[$i]->is_listed;
+  }
+
   for my $i (keys @photos) {
     $progress->tick;
 
@@ -731,9 +767,10 @@ sub _build_photo_pages ($self, $photos) {
       title    => $self->display_title($photo),
       photo    => $photo,
       location => scalar $self->public_location($photo),
-      newer    => ($i > 0 ? $photos[$i - 1] : undef),
-      older    => $photos[$i + 1],
+      newer    => $newer[$i],
+      older    => $older[$i],
       albums   => $self->albums_for($photo),
+      noindex  => ! $photo->is_listed,
     });
 
     for my $recipe (Jiggle::Derive->published_recipes_for($photo)) {
@@ -755,8 +792,9 @@ sub _build_photo_pages ($self, $photos) {
 This returns what another site needs to embed the photo, which is published
 as F</p/ID/embed.json>: its title, its page's URL, its type, and the URL and
 size of each rendition useful for embedding (and, for a video, of the
-video).  URLs are absolute.  It includes no location, and only public photos
-are published at all, so a private or unknown id is simply a 404.
+video).  URLs are absolute.  It includes no location, and only public and
+unlisted photos are published at all, so a private or unknown id is simply a
+404.
 
 C<format> is the version of this structure, for the blog plugin to check.
 
@@ -788,7 +826,7 @@ sub embed_data ($self, $photo) {
 }
 
 sub _build_collections ($self) {
-  my $albums = $self->albums;
+  my $albums = $self->listed_albums;
   $self->_write_page('albums/index.html', 'albums', {
     title  => 'Albums',
     albums => $albums,
@@ -800,6 +838,7 @@ sub _build_collections ($self) {
     $self->_write_page("albums/$album->{slug}/index.html", 'album', {
       title => $album->{title},
       album => $album,
+      noindex => ! $album->{listed},
       og    => $self->page_opengraph($album->{title}, "/albums/$album->{slug}/", $album->{cover},
         $self->excerpt($self->description_text($album->{description} // ''))
           || _count(0 + $album->{photos}->@*, 'photo')),
@@ -845,11 +884,11 @@ C<< { by => "taken" or "added", date => "2026-01-22", photos => [...] } >>.
 my $FEED_SIZE = 30;
 
 sub feed_entries ($self) {
-  my %in_album = map {; my $a = $_; map {; $_->id => 1 } $a->{photos}->@* } $self->albums->@*;
+  my %in_album = map {; my $a = $_; map {; $_->id => 1 } $a->{photos}->@* } $self->listed_albums->@*;
 
   my @entries;
 
-  for my $album ($self->albums->@*) {
+  for my $album ($self->listed_albums->@*) {
     # An album with no creation date is dated by its newest photo.
     my $when = $album->{created}
             // (List::Util::maxstr(grep {; defined } map {; $_->added_at } $album->{photos}->@*));
@@ -923,7 +962,9 @@ sub _feed_album_html ($self, $album) {
 
   $html .= $self->description_html($album->{description});
 
-  my @more = grep {; $_->id ne $cover->id } $self->sample(8, $album->{photos}->@*);
+  # The feed is a listing, so its samples link only to listed photos; the
+  # cover, which may be unlisted, links to the album.
+  my @more = grep {; $_->id ne $cover->id } $self->sample(8, grep {; $_->is_listed } $album->{photos}->@*);
   if (@more) {
     $html .= '<p>' . join(' ', map {;
       my ($tw, $th) = $self->rendition_size($_, 'h480.webp');
