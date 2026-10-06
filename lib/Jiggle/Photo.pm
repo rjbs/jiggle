@@ -58,13 +58,14 @@ around BUILDARGS => sub ($orig, $class, @args) {
   return { %$arg, tags => \@tags, ($capitals ? (_had_capital_tags => 1) : ()) };
 };
 
-# public, private, or pending: not yet reviewed, so not published, which is
-# what ingest makes new photos.  Reviewing one makes it public or private.
+# public; unlisted: published, but linked only from albums it's in; private;
+# or pending: not yet reviewed, so not published, which is what ingest makes
+# new photos.  Reviewing one makes it one of the others.
 has visibility => (
   is  => 'ro',
   default => 'public',
   isa => sub ($v) {
-    Carp::croak("unknown visibility $v") unless $v =~ /\A(?:public|private|pending)\z/;
+    Carp::croak("unknown visibility $v") unless $v =~ /\A(?:public|unlisted|private|pending)\z/;
   },
 );
 
@@ -103,7 +104,13 @@ has location => (is => 'ro');
 
 =method is_published
 
-This is true if the photo belongs on the site: if it's public.
+This is true if the photo has a page on the site: if it's public or
+unlisted.
+
+=method is_listed
+
+This is true if the site lists the photo, on the home page, in the feed, and
+so on: if it's public.
 
 =method is_pending
 
@@ -111,7 +118,8 @@ This is true if nobody has reviewed the photo yet.
 
 =cut
 
-sub is_published ($self) { $self->visibility eq 'public'  }
+sub is_published ($self) { $self->visibility =~ /\A(?:public|unlisted)\z/ }
+sub is_listed    ($self) { $self->visibility eq 'public'  }
 sub is_pending   ($self) { $self->visibility eq 'pending' }
 
 sub ext    ($self) { $self->original->{ext}    }

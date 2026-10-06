@@ -6,6 +6,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><%= $page_title %></title>
 <link rel="stylesheet" href="/static/jiggle.css">
+% if ($noindex) {
+<meta name="robots" content="noindex">
+% }
 <link rel="alternate" type="application/atom+xml" href="/feed.xml" title="<%== $site->attr_text($site->site_title) %>">
 <script src="/static/jiggle-keys.js" defer></script>
 % if ($og) {

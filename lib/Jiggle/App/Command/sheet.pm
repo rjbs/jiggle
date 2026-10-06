@@ -17,7 +17,7 @@ sub description {
   (the same as jiggle edit takes), and opens it.  It shows the library's
   files directly, so it works only on this machine, and is never published.
 
-    pending  private  public  all
+    pending  private  public  unlisted  all
     album:SLUG  tag:TAG  year:YYYY  id:ID  limit:N
 
   For example, "jiggle sheet private --group flickr-privacy" is the page for

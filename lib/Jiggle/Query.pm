@@ -20,7 +20,8 @@ A query is a list of terms, all of which a photo must match:
 
   pending         not yet reviewed (and so not published)
   private         private
-  public          public: published
+  public          public: published and listed
+  unlisted        unlisted: published, but listed only in albums
   all             every photo
   album:SLUG      in the album with that slug
   tag:TAG         tagged TAG, compared as the site compares tags (by slug)
@@ -55,7 +56,7 @@ sub _build__tests ($self) {
 
   for my $term ($self->terms->@*) {
     if    ($term eq 'all')     { }
-    elsif ($term =~ /\A(?:pending|private|public)\z/) {
+    elsif ($term =~ /\A(?:pending|private|public|unlisted)\z/) {
       my $want = $term;
       push @tests, sub ($p) { $p->visibility eq $want };
     }

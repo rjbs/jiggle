@@ -14,6 +14,7 @@ my ($library) = library_with(
     { id => 'old00001', taken => '2008-01-06T19:36:11', tags => [ 'High St' ] },
     { id => 'old00002', taken => '2008-04-01T12:00:00', tags => [ 'high-st', 'oslo' ] },
     { id => 'undated1', visibility => 'private' },
+    { id => 'unlist01', visibility => 'unlisted', taken => '2001-01-01T00:00:00' },
   ],
   albums => [
     { slug => 'oslo', title => 'Oslo', photos => [ 'old00002', 'old00001' ] },
@@ -33,8 +34,9 @@ sub query_fails ($terms, $want_error) {
 query_selects([ 'pending' ],            [ 'new00002', 'new00001' ]);
 query_selects([ 'private' ],            [ 'undated1' ]);
 query_selects([ 'public' ],             [ 'old00001', 'old00002' ]);
+query_selects([ 'unlisted' ],           [ 'unlist01' ]);
 query_selects([ 'pending', 'public' ],  [ ]);
-query_selects([ 'all' ],                [ 'old00001', 'old00002', 'new00002', 'new00001', 'undated1' ]);
+query_selects([ 'all' ],                [ 'unlist01', 'old00001', 'old00002', 'new00002', 'new00001', 'undated1' ]);
 query_selects([ 'tag:high-st' ],        [ 'old00001', 'old00002' ]);
 query_selects([ 'tag:High St' ],        [ 'old00001', 'old00002' ]);
 query_selects([ 'album:oslo' ],         [ 'old00002', 'old00001' ]);
@@ -43,7 +45,7 @@ query_selects([ 'year:2026' ],          [ 'new00002', 'new00001' ]);
 query_selects([ 'id:old00002', 'id:undated1' ], [ 'old00002', 'undated1' ]);
 query_selects([ 'tag:nothing' ],        [ ]);
 query_selects([ 'pending', 'limit:1' ], [ 'new00002' ]);
-query_selects([ 'all', 'limit:2' ],     [ 'old00001', 'old00002' ]);
+query_selects([ 'all', 'limit:2' ],     [ 'unlist01', 'old00001' ]);
 query_selects([ 'album:oslo', 'limit:1' ], [ 'old00002' ]);
 query_selects([ 'tag:oslo', 'limit:5' ],   [ 'old00002' ]);
 
