@@ -87,7 +87,7 @@ sub backup_photo ($root, %arg) {
 
 sub imported ($root, %arg) {
   my $lib = $tmp->child('lib-' . $root->basename);
-  $lib->child('jiggle.toml')->touchpath;
+  $lib->child('jiggle.toml')->touchpath->spew_utf8("format = $Jiggle::Library::FORMAT\n");
   my $library = Jiggle::Library->new({ root => $lib });
 
   my $summary = Jiggle::Import::FlickrBackup->new({ library => $library, root => $root })->run;
@@ -140,7 +140,7 @@ subtest 'a messy backup' => sub {
   is_deeply($summary->{skipped}, [], 'nothing skipped');
 
   photo_is('the newest sidecar wins', $photos, 2174183738,
-    title => 'martha, box crawler', tags => [ 'high-st' ], taken => '2008-01-01T10:00:00', pending => 0);
+    title => 'martha, box crawler', tags => [ 'high-st' ], taken => '2008-01-01T10:00:00', visibility => 'public');
 
   photo_is('description to Markdown; upload time kept', $photos, 2173311823,
     description => 'we **know** how to use them', flickr_uploaded => '2008-12-01T12:00:00-05:00');

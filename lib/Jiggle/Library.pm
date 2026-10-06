@@ -54,13 +54,22 @@ has config => (
 
 A library's layout and metadata schema have a version, the C<format> in
 F<jiggle.toml>.  A library with no C<format> is from before there was one,
-and is format 1, the same as today's.  jiggle refuses to work on a library
-with a newer format than it knows, rather than misreading it.  When the
-format changes, a migration moves libraries from one to the next.
+and is format 1.  jiggle refuses to work on a library with a newer format
+than it knows, rather than misreading it, and on one with an older format,
+which C<jiggle upgrade> brings up to date (see L<Jiggle::Upgrade>), unless
+C<allow_old_format> is given, as it is for the upgrade itself.
+
+The formats:
+
+=for :list
+* 1: the first
+* 2: pending is a visibility, not a key of its own (2026-10-05)
 
 =cut
 
-our $FORMAT = 1;
+our $FORMAT = 2;
+
+has allow_old_format => (is => 'ro', default => 0);
 
 sub format ($self) { $self->config->{format} // 1 }
 
@@ -69,6 +78,9 @@ sub BUILD ($self, $) {
   die "the library at " . $self->root . " is format $format, "
     . "but this jiggle only knows format $FORMAT; upgrade jiggle\n"
     if $format > $FORMAT;
+  die "the library at " . $self->root . " is format $format, "
+    . "and this jiggle needs format $FORMAT; run: jiggle upgrade\n"
+    if $format < $FORMAT and ! $self->allow_old_format;
 }
 
 sub originals_dir ($self) { $self->root->child('originals') }

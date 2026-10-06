@@ -26,9 +26,9 @@ my ($library) = library_with(
     { id => 'aaaa0001', title => 'one',   taken => '2026-07-01T10:00:00' },
     { id => 'bbbb0002', title => 'two',   taken => '2026-07-02T10:00:00' },
     { id => 'cccc0003', title => 'three', taken => '2026-07-03T10:00:00' },
-    { id => 'pend0001', pending => 1, taken => '2026-09-01T10:00:00' },
-    { id => 'pend0002', pending => 1, taken => '2026-09-02T10:00:00' },
-    { id => 'pend0003', pending => 1, taken => '2026-09-03T10:00:00' },
+    { id => 'pend0001', visibility => 'pending', taken => '2026-09-01T10:00:00' },
+    { id => 'pend0002', visibility => 'pending', taken => '2026-09-02T10:00:00' },
+    { id => 'pend0003', visibility => 'pending', taken => '2026-09-03T10:00:00' },
     { id => 'priv0001', visibility => 'private' },
   ],
   albums => [
@@ -81,7 +81,7 @@ saw(pending_query               => 'pending limit:2');
 saw(pending_first               => [ qw( pend0001 pend0002 ) ]);
 saw(refresh_disabled_when_dirty => JSON::MaybeXS::true);
 saw(pending_next                => [ qw( pend0002 pend0003 ) ]);
-unlike($library->meta_path('pend0001')->slurp_utf8, qr/^pending/m, 'on disk: pend0001 released');
+like($library->meta_path('pend0001')->slurp_utf8, qr/^visibility = "public"$/m, 'on disk: pend0001 released');
 
 saw(back_query       => 'album:trip');
 saw(bad_query_status => 'unknown query term: pendng');

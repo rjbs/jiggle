@@ -236,9 +236,8 @@ sub batch_data ($self, $arg) {
 
 This returns every album, for the editor's album list, sorted by title: its
 C<slug>, C<title>, C<created>, C<cover> (or its first photo), and how many of
-its photos are C<published>, C<pending> (whatever their visibility), and
-C<private> (and not pending).  Albums with nothing published, which the site
-leaves out, are included.
+its photos are C<published> (public), C<pending>, and C<private>.  Albums
+with nothing published, which the site leaves out, are included.
 
 =cut
 
@@ -254,8 +253,8 @@ sub album_overview ($self) {
       created => $album->created,
       cover   => $album->cover // ($photos[0] && $photos[0]->id),
       published => scalar(grep {; $_->is_published } @photos),
-      pending   => scalar(grep {; $_->pending } @photos),
-      private   => scalar(grep {; ! $_->is_public and ! $_->pending } @photos),
+      pending   => scalar(grep {; $_->visibility eq 'pending' } @photos),
+      private   => scalar(grep {; $_->visibility eq 'private' } @photos),
     };
   }
 
@@ -300,7 +299,6 @@ sub photo_fields ($self, $photo) {
     description => $photo->description,
     tags        => [ $photo->tags->@* ],
     visibility  => $photo->visibility,
-    pending     => $bool->($photo->pending),
     taken       => $photo->taken,
     rotate      => 0 + $photo->rotate,
     location    => $loc ? { private => $bool->($loc->{private}) } : undef,
@@ -592,11 +590,8 @@ sub _apply_change ($self, $attr, $field, $value) {
     $attr->{tags} = \@tags;
   }
   elsif ($field eq 'visibility') {
-    return "unknown visibility" unless ($value // '') =~ /\A(?:public|private)\z/;
+    return "unknown visibility" unless ($value // '') =~ /\A(?:public|private|pending)\z/;
     $attr->{visibility} = $value;
-  }
-  elsif ($field eq 'pending') {
-    $attr->{pending} = $value ? 1 : 0;
   }
   elsif ($field eq 'taken') {
     $value //= '';

@@ -45,7 +45,7 @@ await page.waitForFunction(() => document.title.includes("limit:2"));
 seen.pending_query = query();
 seen.pending_first = await ids();
 await page.locator(".thumb").first().click();
-await page.locator("#sidebar .field", { hasText: "Pending" }).locator("input[type=checkbox]").uncheck();
+await page.locator("#sidebar .field", { hasText: "Visibility" }).locator("select").selectOption("public");
 seen.refresh_disabled_when_dirty = await page.locator("#refresh").isDisabled();
 await page.keyboard.press("Meta+s");
 await written();

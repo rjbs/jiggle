@@ -28,7 +28,7 @@ does nothing.  (A test moves one to check.)  `site/` shares its renditions with
 ## `jiggle.toml`
 
 ```toml
-format   = 1        # the library format; see below
+format   = 2        # the library format; see below
 title    = "Photos"
 base_url = "https://photos.example.com"
 
@@ -40,10 +40,15 @@ lon    = -75.0
 radius = 500              # meters
 ```
 
-**`format`** versions the layout and schema described here.  A library without
-one is format 1, which is today's.  jiggle refuses a library whose format is
-newer than it knows.  When the format changes, a migration moves libraries
-forward.  `jiggle init DIR` makes a new library at the current format.
+**`format`** versions the layout and schema described here, which are format
+2.  A library without one is format 1.  jiggle refuses a library whose format
+is newer than it knows, and one whose format is older, which `jiggle upgrade`
+brings up to date, committing what it changes in `meta/`.  `jiggle init DIR`
+makes a new library at the current format.
+
+- 1: the first.
+- 2 (2026-10-05): pending is a visibility.  In format 1, it was a key of its
+  own (`pending = true`) beside a visibility.
 
 ## `originals/<shard>/<id>.<ext>`
 
@@ -80,8 +85,7 @@ title = "we've got legs"
 description = "Markdown; newlines are line breaks"
 taken = 2008-01-06T19:36:11       # TOML datetime; an offset only if known
 tags = ["high-st"]                # lowercase
-visibility = "public"             # or "private": kept, never published
-pending = true                    # not yet reviewed; usually absent
+visibility = "public"             # or "private" or "pending"; see below
 rotate = 90                       # extra clockwise turn; usually absent
 added = 2008-01-06T21:32:33-05:00   # when it joined the collection
 flickr_id = "2173311823"          # imported photos only
@@ -114,12 +118,12 @@ private = true                    # never publish this location
 - `rotate` is a turn beyond what the file's EXIF orientation calls for, like a
   photo rotated by hand on Flickr.  Changing it remakes that photo's
   renditions.
-- `pending` marks a photo nobody has reviewed yet.  Ingest sets it, and the
-  editor clears it.  A pending photo is never published, whatever its
-  visibility, so new photos can default to public.  Imports from Flickr aren't
-  pending: they were reviewed there.
-- `visibility`: Flickr's "friend & family" is imported as private.  The
-  original value is kept in the raw record (below).
+- `visibility` is `public` (published), `private` (kept, never published), or
+  `pending`: not yet reviewed, and so not published.  Ingest makes new photos
+  pending, and reviewing one in the editor makes it public or private.
+  Imports from Flickr aren't pending: they were reviewed there.  Flickr's
+  "friend & family" is imported as private, and the original value is kept
+  in the raw record (below).
 
 ### Albums: `meta/albums/<slug>.toml`
 

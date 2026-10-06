@@ -33,7 +33,7 @@ sub library_with (%arg) {
   my $root = Path::Tiny->tempdir;
   push @KEEP_TEMPDIRS, $root;
 
-  $root->child('jiggle.toml')->spew_utf8($arg{config} // '');
+  $root->child('jiggle.toml')->spew_utf8("format = $Jiggle::Library::FORMAT\n" . ($arg{config} // ''));
 
   my $library = Jiggle::Library->new({ root => $root });
   my $derive  = Jiggle::Derive->new({ library => $library });

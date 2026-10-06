@@ -57,8 +57,7 @@ sub never_published_ok ($desc, %unpublishable) {
 }
 
 never_published_ok('private', visibility => 'private');
-never_published_ok('pending', pending => 1);
-never_published_ok('pending and private', pending => 1, visibility => 'private');
+never_published_ok('pending', visibility => 'pending');
 
 subtest 'a photo whose renditions are missing is left out' => sub {
   my $photos = [

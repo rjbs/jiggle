@@ -61,7 +61,7 @@ sub export_albums ($root, @albums) {
 
 sub imported ($root) {
   my $lib = $tmp->child('lib-' . $root->basename);
-  $lib->child('jiggle.toml')->touchpath;
+  $lib->child('jiggle.toml')->touchpath->spew_utf8("format = $Jiggle::Library::FORMAT\n");
   my $library = Jiggle::Library->new({ root => $lib });
 
   my $summary = Jiggle::Import::FlickrExport->new({ library => $library, root => $root })->run;
@@ -111,8 +111,7 @@ subtest 'photo metadata' => sub {
     tags        => [ 'high-st' ],
     taken       => '2008-01-06T19:36:11',
     location    => { lat => 40.623775, lon => -75.373222 },
-    visibility  => 'public',
-    pending     => 0);
+    visibility  => 'public');
 
   # 16:12:06 on a Pacific clock, in July, is 23:12:06 UTC.
   is(epoch_of($photos->{2173311823}->flickr_uploaded),

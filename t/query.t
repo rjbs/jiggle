@@ -9,8 +9,8 @@ use Jiggle::TestLibrary;
 
 my ($library) = library_with(
   photos => [
-    { id => 'new00001', pending => 1, taken => '2026-09-01T10:00:00' },
-    { id => 'new00002', pending => 1, taken => '2026-08-01T10:00:00', visibility => 'private' },
+    { id => 'new00001', visibility => 'pending', taken => '2026-09-01T10:00:00' },
+    { id => 'new00002', visibility => 'pending', taken => '2026-08-01T10:00:00' },
     { id => 'old00001', taken => '2008-01-06T19:36:11', tags => [ 'High St' ] },
     { id => 'old00002', taken => '2008-04-01T12:00:00', tags => [ 'high-st', 'oslo' ] },
     { id => 'undated1', visibility => 'private' },
@@ -31,8 +31,9 @@ sub query_fails ($terms, $want_error) {
 }
 
 query_selects([ 'pending' ],            [ 'new00002', 'new00001' ]);
-query_selects([ 'private' ],            [ 'new00002', 'undated1' ]);
-query_selects([ 'pending', 'public' ],  [ 'new00001' ]);
+query_selects([ 'private' ],            [ 'undated1' ]);
+query_selects([ 'public' ],             [ 'old00001', 'old00002' ]);
+query_selects([ 'pending', 'public' ],  [ ]);
 query_selects([ 'all' ],                [ 'old00001', 'old00002', 'new00002', 'new00001', 'undated1' ]);
 query_selects([ 'tag:high-st' ],        [ 'old00001', 'old00002' ]);
 query_selects([ 'tag:High St' ],        [ 'old00001', 'old00002' ]);

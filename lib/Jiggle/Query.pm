@@ -18,9 +18,9 @@ Jiggle::Query - pick a batch of photos from a library
 
 A query is a list of terms, all of which a photo must match:
 
-  pending         not yet reviewed
-  private         visibility is private
-  public          visibility is public
+  pending         not yet reviewed (and so not published)
+  private         private
+  public          public: published
   all             every photo
   album:SLUG      in the album with that slug
   tag:TAG         tagged TAG, compared as the site compares tags (by slug)
@@ -55,9 +55,10 @@ sub _build__tests ($self) {
 
   for my $term ($self->terms->@*) {
     if    ($term eq 'all')     { }
-    elsif ($term eq 'pending') { push @tests, sub ($p) { $p->pending } }
-    elsif ($term eq 'private') { push @tests, sub ($p) { ! $p->is_public } }
-    elsif ($term eq 'public')  { push @tests, sub ($p) { $p->is_public } }
+    elsif ($term =~ /\A(?:pending|private|public)\z/) {
+      my $want = $term;
+      push @tests, sub ($p) { $p->visibility eq $want };
+    }
     elsif ($term =~ /\Aalbum:(.+)\z/) {
       my $slug = $1;
       my ($album) = grep {; $_->slug eq $slug } $self->library->albums;

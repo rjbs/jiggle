@@ -26,7 +26,7 @@ sub new_jpeg {
 
 sub new_library {
   my $root = $tmp->child('lib' . ++$n);
-  $root->child('jiggle.toml')->touchpath;
+  $root->child('jiggle.toml')->touchpath->spew_utf8("format = $Jiggle::Library::FORMAT\n");
   return Jiggle::Library->new({ root => $root });
 }
 
@@ -92,7 +92,7 @@ subtest "when it was added is recorded" => sub {
 
 subtest 'new photos are pending' => sub {
   my ($photo) = Jiggle::Ingest->new({ library => new_library() })->ingest_files(new_jpeg());
-  ok($photo->pending, 'pending');
+  is($photo->visibility, 'pending', 'pending');
   ok(! $photo->is_published, '...so not published, though public');
 };
 
