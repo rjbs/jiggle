@@ -63,7 +63,7 @@ round_trips_ok('local datetime', taken => '2026-07-17T17:23:17');
 
 round_trips_ok('extra rotation', rotate => 90);
 
-round_trips_ok('pending', pending => 1);
+round_trips_ok('pending', visibility => 'pending');
 
 sub tags_read_as ($desc, $given, $want, $had_capitals) {
   my $photo = photo(tags => $given);

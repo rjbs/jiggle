@@ -24,16 +24,18 @@ sub global_opt_spec {
 }
 
 sub library ($self) {
-  $self->{library} //= do {
-    my $root = $self->global_options->{library}
-            // $ENV{JIGGLE_LIBRARY}
-            // '.';
+  $self->{library} //= Jiggle::Library->new({ root => $self->library_root, logger => $self->logger });
+}
 
-    die "$root doesn't look like a jiggle library (no jiggle.toml)\n"
-      unless -e "$root/jiggle.toml";
+sub library_root ($self) {
+  my $root = $self->global_options->{library}
+          // $ENV{JIGGLE_LIBRARY}
+          // '.';
 
-    Jiggle::Library->new({ root => $root, logger => $self->logger });
-  };
+  die "$root doesn't look like a jiggle library (no jiggle.toml)\n"
+    unless -e "$root/jiggle.toml";
+
+  return $root;
 }
 
 # Every message gets the time of day, so a long run's log shows where the

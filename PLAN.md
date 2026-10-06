@@ -329,14 +329,18 @@ files, for the part Finder is bad at, like selecting a dozen photos, tagging
 them, and adding them to an album.  The workflow is: select a batch, view and
 edit it, and write the changes, as often as you like.
 
-**Pending.**  A photo with `pending = true` has not been reviewed, and the
-build never publishes it, whatever its visibility.  Ingest sets it, so new
-photos can default to public safely.  In the editor it's an ordinary field:
-when a batch is ready, select what's done and clear it.  So writing changes
-and releasing photos are separate acts: a savepoint halfway through
-captioning 200 photos publishes nothing, and a batch can be released in
-parts.  Pending is its own key, not a visibility, because visibility is one
-of the things decided during review.
+**Pending.**  A photo whose visibility is `pending` has not been reviewed,
+and the build never publishes it.  Ingest makes new photos pending.
+Reviewing one is choosing its visibility, public or private, and until then
+writing changes publishes nothing, so a savepoint halfway through captioning
+200 photos is safe.
+
+At first, pending was a key of its own, beside a visibility, so that a photo
+could be marked "public, but not yet" and released later.  In practice,
+photos were released as they were reviewed, the staging went unused, and two
+fields were a tax on everything that decides what's published, so in
+library format 2 (2026-10-05) pending became a visibility.  If staging is
+ever wanted, it can come back as a separate "hold".
 
 **Selecting a batch** is by a small query language, typed into the page or
 given on the command line:
@@ -367,7 +371,7 @@ needed), with details and editing controls in a left sidebar.
   a box selects many.
 * With one photo selected, the sidebar edits it; with several, it edits all
   of them.
-* Fields: title, description, tags, albums, visibility, pending, `taken`
+* Fields: title, description, tags, albums, visibility, `taken`
   (for photos with no EXIF date), location privacy, and rotate (previewed
   with CSS; renditions are remade at the next build).
 * Edited, unsaved fields are marked dirty.
@@ -392,7 +396,7 @@ dirty state only once the server says the commit happened.
   since (by hand, or a `git pull`) is refused, not overwritten.
 * The commit names only the paths the editor wrote (`git commit -- PATHS`),
   so unrelated uncommitted work in `meta/` isn't swept in.  Its message is
-  generated ("edit 14 photos: title, tags, pending"), with an optional note.
+  generated ("edit 14 photos: title, tags, visibility"), with an optional note.
 * A photo whose rotation was written has its renditions remade before the
   page unfreezes, so the sheet shows it turned.
 * Album changes are sent as additions and removals, and merged with the

@@ -11,7 +11,7 @@ use Jiggle::TestLibrary;
 my ($library) = library_with(
   photos => [
     { id => 'aaaa0001', title => 'First', taken => '2008-01-06T19:36:11', tags => [ 'high-st' ] },
-    { id => 'bbbb0002', title => 'Second', taken => '2026-07-16T10:00:00', visibility => 'private', pending => 1 },
+    { id => 'bbbb0002', title => 'Second', taken => '2026-07-16T10:00:00', visibility => 'private' },
     { id => 'cccc0003', title => 'Undated' },
   ],
   albums => [ { slug => 'trip', title => 'Trip & Co.', photos => [ 'aaaa0001' ] } ],
@@ -31,7 +31,7 @@ sheet_has('every photo', $all,
   qr{<title>all \(3\)</title>},
   qr{<b>First</b><br>2008-01-06},
   qr{<i>Trip &amp; Co\.</i><br>high-st},
-  qr{2026-07-16 <span class="flag private">private</span> <span class="flag pending">pending</span>},
+  qr{2026-07-16 <span class="flag private">private</span><br>},
   qr{<b>Undated</b><br>undated},
   qr{href="file://[^"]*/meta/aa/aaaa0001\.toml">aaaa0001</a>},
   qr{src="file://[^"]*/derived/aa/aaaa0001/h480\.webp"},

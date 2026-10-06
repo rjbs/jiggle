@@ -62,7 +62,7 @@ sub rotated_mov_with_gps {
 my $LIBRARIES = 0;
 sub derived_library ($file, $rotate = 0) {
   my $root = $tmp->child('lib-' . ++$LIBRARIES);
-  $root->child('jiggle.toml')->touchpath;
+  $root->child('jiggle.toml')->touchpath->spew_utf8("format = $Jiggle::Library::FORMAT\n");
   my $library = Jiggle::Library->new({ root => $root });
 
   my $photo = Jiggle::Ingest->new({ library => $library })
@@ -191,7 +191,7 @@ subtest 'an unreadable original is reported, not fatal' => sub {
   run('vips', 'gaussnoise', "$bad",  640, 480);
 
   my $root = $tmp->child('lib-unreadable');
-  $root->child('jiggle.toml')->touchpath;
+  $root->child('jiggle.toml')->touchpath->spew_utf8("format = $Jiggle::Library::FORMAT\n");
   my $library = Jiggle::Library->new({ root => $root });
   my ($g, $b) = Jiggle::Ingest->new({ library => $library })->ingest_files($good, $bad);
 
@@ -226,7 +226,7 @@ subtest 'a damaged original is reported by photo' => sub {
   $file->spew_raw(substr $bytes, 0, int(length($bytes) * 0.6));
 
   my $root = $tmp->child('lib-truncated');
-  $root->child('jiggle.toml')->touchpath;
+  $root->child('jiggle.toml')->touchpath->spew_utf8("format = $Jiggle::Library::FORMAT\n");
   my $library = Jiggle::Library->new({ root => $root });
   my ($photo) = Jiggle::Ingest->new({ library => $library })->ingest_files($file);
 

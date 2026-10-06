@@ -50,7 +50,7 @@ subtest 'nothing without the token' => sub {
 subtest 'the batch, as it is on disk' => sub {
   my ($editor, $t) = signed_in(
     photos => [
-      { id => 'aaaa0001', title => 'first', tags => [ 'x' ], pending => 1,
+      { id => 'aaaa0001', title => 'first', tags => [ 'x' ], visibility => 'pending',
         location => { lat => 40, lon => -75, private => 1 } },
       { id => 'bbbb0002', title => 'second', visibility => 'private' },
       { id => 'cccc0003', title => 'not in the batch' },
@@ -63,7 +63,7 @@ subtest 'the batch, as it is on disk' => sub {
     ->json_is('/photos/0/albums', [ 'trip' ], 'album membership')
     ->json_is('/photos/0/visibility', 'private')
     ->json_is('/photos/1/id', 'aaaa0001')
-    ->json_is('/photos/1/pending', 1, 'pending')
+    ->json_is('/photos/1/visibility', 'pending', 'pending')
     ->json_is('/photos/1/tags', [ 'x' ])
     ->json_is('/photos/1/location', { private => 1 }, 'location privacy, but no coordinates')
     ->json_hasnt('/photos/2', 'only the batch')
@@ -80,8 +80,8 @@ subtest 'the batch, as it is on disk' => sub {
 subtest 'queries' => sub {
   my ($editor, $t) = signed_in(
     photos => [
-      { id => 'aaaa0001', pending => 1, taken => '2026-09-02T10:00:00' },
-      { id => 'bbbb0002', pending => 1, taken => '2026-09-01T10:00:00' },
+      { id => 'aaaa0001', visibility => 'pending', taken => '2026-09-02T10:00:00' },
+      { id => 'bbbb0002', visibility => 'pending', taken => '2026-09-01T10:00:00' },
       { id => 'cccc0003', visibility => 'private' },
     ],
   );
@@ -120,7 +120,7 @@ subtest 'the album list' => sub {
     photos => [
       { id => 'aaaa0001' },
       { id => 'bbbb0002', visibility => 'private' },
-      { id => 'cccc0003', visibility => 'private', pending => 1 },
+      { id => 'cccc0003', visibility => 'pending' },
     ],
     albums => [
       { slug => 'zoo',    title => 'Zoo',    photos => [ 'aaaa0001', 'bbbb0002' ], cover => 'bbbb0002' },
@@ -215,7 +215,7 @@ writes_ok('tags, trimmed and deduplicated', { tags => [ 'x' ] },
   { tags => [ ' x ', 'y', 'x', '' ] }, qr/^tags = \["x", "y"\]$/m);
 writes_ok('tags, lowercased', {}, { tags => [ 'FastMail', 'fastmail' ] }, qr/^tags = \["fastmail"\]$/m);
 writes_ok('visibility', {}, { visibility => 'private' }, qr/^visibility = "private"$/m);
-writes_ok('pending cleared', { pending => 1 }, { pending => 0 }, qr/\A(?!.*^pending)/ms);
+writes_ok('released', { visibility => 'pending' }, { visibility => 'public' }, qr/^visibility = "public"$/m);
 writes_ok('taken', {}, { taken => '2026-09-30T10:15:00-04:00' }, qr/^taken = 2026-09-30T10:15:00-04:00$/m);
 writes_ok('taken removed', { taken => '2026-09-30T10:15:00' }, { taken => '' }, qr/\A(?!.*^taken)/ms);
 writes_ok('rotate', {}, { rotate => 270 }, qr/^rotate = 270$/m);

@@ -45,6 +45,12 @@ has had_capital_tags => (is => 'ro', init_arg => '_had_capital_tags', default =>
 
 around BUILDARGS => sub ($orig, $class, @args) {
   my $arg = $class->$orig(@args);
+
+  # Before library format 2, pending was a key of its own.  A photo with one
+  # would otherwise be read as public, and published.  -- claude, 2026-10-05
+  Carp::croak("pending is no longer a key, but a visibility; this library needs jiggle upgrade")
+    if exists $arg->{pending};
+
   return $arg unless ref $arg->{tags} eq 'ARRAY';
 
   my (%seen, $capitals);
@@ -52,19 +58,15 @@ around BUILDARGS => sub ($orig, $class, @args) {
   return { %$arg, tags => \@tags, ($capitals ? (_had_capital_tags => 1) : ()) };
 };
 
+# public, private, or pending: not yet reviewed, so not published, which is
+# what ingest makes new photos.  Reviewing one makes it public or private.
 has visibility => (
   is  => 'ro',
   default => 'public',
   isa => sub ($v) {
-    Carp::croak("unknown visibility $v") unless $v eq 'public' or $v eq 'private';
+    Carp::croak("unknown visibility $v") unless $v =~ /\A(?:public|private|pending)\z/;
   },
 );
-
-# True for a photo nobody has reviewed yet: ingest sets it, and the editor
-# clears it.  The build never publishes a pending photo, whatever its
-# visibility, so a new photo can default to public without going out before
-# anyone has looked at it.  -- claude, 2026-09-30
-has pending => (is => 'ro', default => 0, coerce => sub ($v) { $v ? 1 : 0 });
 
 has flickr_id => (is => 'ro');
 
@@ -99,15 +101,18 @@ has original => (is => 'ro', required => 1);
 # may be used locally.
 has location => (is => 'ro');
 
-sub is_public ($self) { $self->visibility eq 'public' }
-
 =method is_published
 
-This is true if the photo belongs on the site: public, and not pending.
+This is true if the photo belongs on the site: if it's public.
+
+=method is_pending
+
+This is true if nobody has reviewed the photo yet.
 
 =cut
 
-sub is_published ($self) { $self->is_public && ! $self->pending }
+sub is_published ($self) { $self->visibility eq 'public'  }
+sub is_pending   ($self) { $self->visibility eq 'pending' }
 
 sub ext    ($self) { $self->original->{ext}    }
 sub sha256 ($self) { $self->original->{sha256} }
@@ -182,7 +187,6 @@ sub as_toml ($self) {
     join q{, }, map {; _str($_) } $self->tags->@*;
 
   push @lines, sprintf 'visibility = %s', _str($self->visibility);
-  push @lines, 'pending = true' if $self->pending;
   push @lines, sprintf 'rotate = %d', $self->rotate if $self->rotate;
   push @lines, sprintf 'flickr_id = %s', _str($self->flickr_id)
     if defined $self->flickr_id;

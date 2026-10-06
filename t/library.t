@@ -39,24 +39,28 @@ subtest 'parsed metadata is cached' => sub {
   is(scalar(() = $smaller->photos), 2, 'a removed file is gone');
 };
 
-sub format_ok ($desc, $config, $want) {
+# $want is the format the library loads as, or a pattern its refusal must
+# match.
+sub format_ok ($desc, $config, $want, %arg) {
   # The config goes in after setup, which itself loads the library.
   my (undef, $root) = library_with(photos => []);
   $root->child('jiggle.toml')->spew_utf8($config);
 
-  my $library = eval { Jiggle::Library->new({ root => $root }) };
+  my $library = eval { Jiggle::Library->new({ root => $root, %arg }) };
 
-  if (defined $want) {
+  if (ref $want) {
+    ok(! $library, "$desc: refused");
+    like($@, $want, "$desc: ...saying why");
+  } else {
     ok($library, "$desc: loads") or return diag $@;
     is($library->format, $want, "$desc: format $want");
-  } else {
-    ok(! $library, "$desc: refused");
-    like($@, qr/only knows format/, "$desc: ...saying why");
   }
 }
 
-format_ok('no format given', '', 1);
-format_ok('format 1', "format = 1\n", 1);
-format_ok('a newer format', "format = 2\n", undef);
+format_ok('no format given', '', qr/is format 1.*run: jiggle upgrade/);
+format_ok('format 1', "format = 1\n", qr/is format 1.*run: jiggle upgrade/);
+format_ok('format 1, upgrading', "format = 1\n", 1, allow_old_format => 1);
+format_ok('format 2', "format = 2\n", 2);
+format_ok('a newer format', "format = 3\n", qr/only knows format 2; upgrade jiggle/);
 
 done_testing;

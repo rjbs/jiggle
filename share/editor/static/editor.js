@@ -65,7 +65,6 @@ const SAVED = {
   tags:             p => p.tags,
   albums:           p => p.albums,
   visibility:       p => p.visibility,
-  pending:          p => p.pending,
   taken:            p => p.taken ?? "",
   rotate:           p => p.rotate,
   location_private: p => p.location ? p.location.private : undefined,
@@ -263,7 +262,7 @@ function thumbFor(p) {
     el("div", { class: "badges" },
       state.album && albumCurrent("cover") === p.id ? el("span", { class: "badge cover", text: "cover" }) : null,
       inAlbum(p) ? null : el("span", { class: "badge out", text: "out of album" }),
-      current(p, "pending") ? el("span", { class: "badge pending", text: "pending" }) : null,
+      current(p, "visibility") === "pending" ? el("span", { class: "badge pending", text: "pending" }) : null,
       current(p, "visibility") === "private" ? el("span", { class: "badge", text: "private" }) : null,
       p.type === "video" ? el("span", { class: "badge", text: "▶" }) : null,
     ),
@@ -536,7 +535,8 @@ function visibilityField(photos) {
   const mixed = values.length > 1;
   const select = el("select", {},
     mixed ? el("option", { value: "", text: "mixed", disabled: true }) : null,
-    el("option", { value: "public",  text: "public" }),
+    el("option", { value: "pending", text: "pending: not yet reviewed, so not published" }),
+    el("option", { value: "public",  text: "public: published" }),
     el("option", { value: "private", text: "private: kept, never published" }),
   );
   select.value = mixed ? "" : values[0];
@@ -891,7 +891,6 @@ function renderSidebar() {
     tagsField(photos),
     albumsField(photos),
     visibilityField(photos),
-    checkboxField("Pending", photos, "pending", "not yet reviewed, so not published"),
     takenField(photos),
     located.length
       ? checkboxField("Location", located, "location_private", "keep the location private",

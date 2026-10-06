@@ -84,7 +84,7 @@ subtest 'removing a photo' => sub {
 };
 
 subtest 'removing originals too' => sub {
-  my $library = committed_library(photos => [ { id => 'gone0001', pending => 1 }, { id => 'gone0002' } ]);
+  my $library = committed_library(photos => [ { id => 'gone0001', visibility => 'pending' }, { id => 'gone0002' } ]);
   my @originals = map {; $library->original_path($library->photo($_)) } qw( gone0001 gone0002 );
 
   my $result = remove_from($library, [ 'gone0001', 'gone0002' ], originals => 1);
@@ -107,7 +107,7 @@ subtest 'a removed photo can be ingested again' => sub {
   plan skip_all => 'needs vips' unless system('vips --version >/dev/null 2>&1') == 0;
 
   my $root = Path::Tiny->tempdir;
-  $root->child('jiggle.toml')->touchpath;
+  $root->child('jiggle.toml')->touchpath->spew_utf8("format = $Jiggle::Library::FORMAT\n");
   my $library = Jiggle::Library->new({ root => $root });
 
   my $jpeg = $root->child('src.jpg');

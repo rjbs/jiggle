@@ -95,7 +95,8 @@ files' mtimes mean nothing (like a download's) should turn this off.
 * pending
 Whether the new photo is pending: unreviewed, and so not yet published.
 Default: true.  An importer bringing in photos already reviewed elsewhere
-(like Flickr's) should turn this off.
+(like Flickr's) should turn this off, and give each its visibility.  If it
+doesn't, the photo is public.
 
 =cut
 
@@ -142,7 +143,7 @@ sub ingest_file ($self, $path, $arg = {}) {
     type  => $kind,
     taken => $facts->{taken},
     added => datetime_with_offset(time),    # an importer may say otherwise
-    pending => ($arg->{pending} // 1),
+    visibility => (($arg->{pending} // 1) ? 'pending' : 'public'),
     ($facts->{location} ? (location => $facts->{location}) : ()),
     %$extra,
     id    => $id,
