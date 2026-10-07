@@ -1,6 +1,6 @@
 <%= $site->partial('_period_nav', {
-  newer => $newer && { url => $site->year_url($newer->{year}), label => $newer->{year} },
-  older => $older && { url => $site->year_url($older->{year}), label => $older->{year} },
+  earlier => $earlier && { url => $site->year_url($earlier->{year}), label => $earlier->{year} },
+  later   => $later   && { url => $site->year_url($later->{year}), label => $later->{year} },
 }) %>
 <h1><%= $year->{year} %> <span class="count"><%= $year->{count} %> photo<%= $year->{count} == 1 ? '' : 's' %></span></h1>
 % for my $month (reverse $year->{months}->@*) {

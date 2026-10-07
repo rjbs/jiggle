@@ -1,6 +1,6 @@
-// Arrow keys follow the page's rel="prev" and rel="next" links: on a photo
-// page, left is the newer photo and right the older one, matching where the
-// links sit.  Keys are left alone while typing, while a video has focus (the
+// Arrow keys follow the page's rel="prev" and rel="next" links: left is the
+// earlier photo (or month, or year) and right the later one, matching where
+// the links sit.  Keys are left alone while typing, while a video has focus (the
 // arrows seek it), and with any modifier held, so browser shortcuts still
 // work.  -- claude, 2026-09-27
 document.addEventListener('keydown', function (e) {

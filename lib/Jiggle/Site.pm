@@ -744,16 +744,17 @@ sub _build_photo_pages ($self, $photos) {
     logger => $self->logger,
   });
 
-  # Each page links to the nearest listed photos, newer and older, so no
-  # listed page links to an unlisted one.  -- claude, 2026-10-06
-  my (@newer, @older, $last);
+  # Each page links to the nearest listed photos, later and earlier, so no
+  # listed page links to an unlisted one.  The photos are newest first.
+  # -- claude, 2026-10-06
+  my (@later, @earlier, $last);
   for my $i (keys @photos) {
-    $newer[$i] = $last;
+    $later[$i] = $last;
     $last = $photos[$i] if $photos[$i]->is_listed;
   }
   undef $last;
   for my $i (reverse keys @photos) {
-    $older[$i] = $last;
+    $earlier[$i] = $last;
     $last = $photos[$i] if $photos[$i]->is_listed;
   }
 
@@ -767,8 +768,8 @@ sub _build_photo_pages ($self, $photos) {
       title    => $self->display_title($photo),
       photo    => $photo,
       location => scalar $self->public_location($photo),
-      newer    => $newer[$i],
-      older    => $older[$i],
+      earlier  => $earlier[$i],
+      later    => $later[$i],
       albums   => $self->albums_for($photo),
       noindex  => ! $photo->is_listed,
     });
@@ -1096,7 +1097,7 @@ sub _build_archive ($self) {
     });
   }
 
-  # Years and months are newest first, so the "newer" neighbor of each is the
+  # Years and months are newest first, so the later neighbor of each is the
   # one before it in the list.
   for my $i (keys @years) {
     my $year = $years[$i];
@@ -1105,8 +1106,8 @@ sub _build_archive ($self) {
       year  => $year,
       og    => $self->page_opengraph($year->{year}, "/$year->{year}/", $year->{months}[0]{photos}[-1],
         _count($year->{count}, 'photo')),
-      newer => ($i > 0 ? $years[$i - 1] : undef),
-      older => $years[$i + 1],
+      later   => ($i > 0 ? $years[$i - 1] : undef),
+      earlier => $years[$i + 1],
     });
   }
 
@@ -1119,8 +1120,8 @@ sub _build_archive ($self) {
       month => $month,
       og    => $self->page_opengraph($title, "/$month->{year}/$month->{month}/", $month->{photos}[-1],
         _count(0 + $month->{photos}->@*, 'photo')),
-      newer => ($i > 0 ? $months[$i - 1] : undef),
-      older => $months[$i + 1],
+      later   => ($i > 0 ? $months[$i - 1] : undef),
+      earlier => $months[$i + 1],
     });
   }
 

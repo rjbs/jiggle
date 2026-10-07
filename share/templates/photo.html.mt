@@ -20,11 +20,11 @@
 % }
   </figure>
   <nav class="neighbors" data-pagefind-ignore>
-% if ($newer) {
-    <a rel="prev" href="<%= $site->photo_url($newer) %>">&larr; newer</a>
+% if ($earlier) {
+    <a rel="prev" href="<%= $site->photo_url($earlier) %>">&larr; earlier</a>
 % }
-% if ($older) {
-    <a rel="next" href="<%= $site->photo_url($older) %>">older &rarr;</a>
+% if ($later) {
+    <a rel="next" href="<%= $site->photo_url($later) %>">later &rarr;</a>
 % }
   </nav>
   <div class="photo-info">

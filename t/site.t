@@ -100,10 +100,8 @@ unlisted_file_ok('tags omit it', 'tags/vienna/index.html', lacks => [ $links_unl
 ok(! -e $udir->child('tags/secret'), 'a tag only it has has no page');
 unlisted_file_ok('the archive omits it', '2026/07/index.html', lacks => [ $links_unl ]);
 unlisted_file_ok('the map omits it', 'map/photos.geojson', lacks => [ qr/unl00001/ ]);
-unlisted_file_ok('neighbors skip it', 'p/pub00002/index.html',
-  has => [ qr{href="/p/pub00001/"} ], lacks => [ $links_unl ]);
-unlisted_file_ok('...both ways', 'p/pub00001/index.html',
-  has => [ qr{href="/p/pub00002/"} ], lacks => [ $links_unl ]);
+neighbors_are('neighbors skip it', $udir, 'p/pub00002/index.html', { prev => '/p/pub00001/' });
+neighbors_are('...both ways', $udir, 'p/pub00001/index.html', { next => '/p/pub00002/' });
 
 unlisted_file_ok('an album of only unlisted photos has a page', 'albums/hidden/index.html',
   has => [ qr{href="/p/unl00002/"}, $noindex ]);
@@ -492,6 +490,14 @@ sub page_lists_ok ($desc, $dir, $page, $want_ids) {
   is_deeply([ photo_ids_on($file) ], $want_ids, "$desc: photos on $page");
 }
 
+# A page's neighbor links: the left one, rel="prev", is earlier, and the
+# right one, rel="next", is later.  Either can be undef, for none.
+sub neighbors_are ($desc, $dir, $page, $want) {
+  my %got = $dir->child($page)->slurp_utf8 =~ m{<a rel="(prev|next)" href="([^"]+)"}g;
+  is_deeply(\%got, { map {; defined $want->{$_} ? ($_ => $want->{$_}) : () } qw( prev next ) },
+    "$desc: ${page}'s neighbors");
+}
+
 sub page_links_ok ($desc, $dir, $page, @hrefs) {
   my $html = $dir->child($page)->slurp_utf8;
   for my $href (@hrefs) {
@@ -519,8 +525,11 @@ subtest 'archive by year and month' => sub {
   page_lists_ok('undated',             $dir, 'archive/undated/index.html', [qw( nodt )]);
   ok(! -e $dir->child('2026/09'), 'no page for a month with no photos');
 
-  page_links_ok('month neighbors', $dir, '2026/07/index.html', '/2026/08/', '/2018/08/', '/2026/');
-  page_links_ok('year neighbors',  $dir, '2018/index.html',    '/2026/');
+  page_links_ok('month to year', $dir, '2026/07/index.html', '/2026/');
+  neighbors_are('a month', $dir, '2026/07/index.html', { prev => '/2018/08/', next => '/2026/08/' });
+  neighbors_are('the last month', $dir, '2026/08/index.html', { prev => '/2026/07/' });
+  neighbors_are('the first year', $dir, '2018/index.html', { next => '/2026/' });
+  neighbors_are('a photo', $dir, 'p/jul2/index.html', { prev => '/p/jul1/', next => '/p/jul3/' });
   page_links_ok('archive index',   $dir, 'archive/index.html', '/2026/', '/2018/', '/archive/undated/');
   page_links_ok('photo to month',  $dir, 'p/jul3/index.html',  '/2026/07/');
 
