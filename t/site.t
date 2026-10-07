@@ -2,8 +2,6 @@ use v5.36;
 
 use Test::More;
 
-use Digest::SHA ();
-
 use lib 'lib', 't/lib';
 
 use JSON::MaybeXS ();
@@ -532,15 +530,6 @@ subtest 'an album listing a photo twice' => sub {
   my @tiles = $dir->child('albums/lyon/index.html')->slurp_utf8 =~ m{<li[^>]*><a href="/albums/lyon/([^/"]+)/"}g;
   is_deeply(\@tiles, [ qw( twice001 once0001 ) ], 'it appears once');
   neighbors_are('...with one page', $dir, 'albums/lyon/once0001/index.html', { prev => '/albums/lyon/twice001/' });
-};
-
-subtest 'static files are linked with their versions' => sub {
-  my ($site, $dir) = built_site(photos => [ { id => 'aaaa0001' } ]);
-  my $html = $dir->child('index.html')->slurp_utf8;
-  for my $file ('jiggle.css', 'jiggle-keys.js') {
-    my $v = substr Digest::SHA::sha1_hex($dir->child('static', $file)->slurp_raw), 0, 10;
-    like($html, qr{"/static/\Q$file\E\?v=$v"}, "$file, by the digest of what was published");
-  }
 };
 
 subtest 'archive by year and month' => sub {

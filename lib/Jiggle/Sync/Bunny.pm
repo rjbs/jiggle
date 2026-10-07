@@ -50,17 +50,16 @@ F<404.html> is uploaded there too.
 
 Pages go live only after what they refer to: every other file (stylesheets,
 scripts, renditions, data) is uploaded first, and the HTML only once all of
-those have succeeded.  Otherwise a page could ask for a stylesheet by its
-new version (see L<Jiggle::Site/static_url>) while the old one is still in
-storage, and a visitor's browser would keep the old one under the new name.
-Likewise, every deletion waits until every upload has succeeded, so the
-live site never links to something already gone.  If any upload fails,
-nothing is deleted.
+those have succeeded.  Otherwise a page could go live showing a new photo
+whose renditions aren't there yet.  Likewise, every deletion waits until
+every upload has succeeded, so the live site never links to something
+already gone.  If any upload fails, nothing is deleted.
 
 Then the CDN's cache is purged of every URL changed or deleted, on each of
-the pull zone's hostnames (or C<purge_hosts>, if given).  That's required, not just tidy: a rendition's URL stays the
-same when it's remade (say, rotated), and a photo made private must stop
-being served from the cache, not just from storage.
+the pull zone's hostnames (or C<purge_hosts>, if given).  That's required,
+not just tidy: a rendition's URL stays the same when it's remade (say,
+rotated), and a photo made private must stop being served from the cache,
+not just from storage.
 
 Bunny limits purging: exact URLs to a burst of 120, then 5 a second, and
 prefixes to a burst of 20, then one every two seconds.  A template change
