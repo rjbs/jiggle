@@ -16,7 +16,7 @@ use Path::Tiny ();
 # Paths in %fail always get a 500, and the next $limited purge requests get
 # a 429.  It refuses, as Bunny does, to purge URLs on hostnames that aren't
 # the pull zone's.  -- claude, 2026-10-01
-my (%stored, @purged, %fail, $limited);
+my (%stored, @purged, %fail, $limited, @put_order);
 our @hostnames = ('photos.example.com');
 
 app->log->level('fatal');
@@ -31,6 +31,7 @@ put '/zone/*rel' => sub ($c) {
     unless ($c->req->headers->header('Checksum') // '') eq uc Digest::SHA::sha256_hex($body);
 
   $stored{$path} = $body;
+  push @put_order, $path;
   $c->render(json => { HttpCode => 201 }, status => 201);
 };
 
@@ -234,8 +235,8 @@ sync_ok('a directory with many changes is purged by prefix, even when Bunny says
   \%v5,
   {
     uploaded => [
-      'albums/index.html', 'albums/x/index.html', 'albums/y/index.html',
-      'img/dd/500.webp', 'index.html',
+      'img/dd/500.webp',
+      'albums/index.html', 'albums/x/index.html', 'albums/y/index.html', 'index.html',
       'p/aa/index.html', 'p/cc/index.html', 'p/dd/index.html',
     ],
     deleted  => [],
@@ -275,6 +276,33 @@ subtest 'a purge on a hostname not the pull zone\'s fails, saying so' => sub {
   };
   like($ok ? '' : $@, qr{purge.*failed}, 'it dies');
   like(join("\n", @log), qr{404.*hostname one of the pull zone's}, '...having said why');
+};
+
+# Pages go up only after the files they refer to, even though "albums/"
+# sorts before "img/" and "static/".  -- claude, 2026-10-07
+subtest 'pages are uploaded after everything else' => sub {
+  %stored = (); @put_order = (); %fail = ();
+  $tmp->child('state', 'bunny-uploaded.json')->remove;
+  build_site({
+    'albums/x/index.html' => 'album', 'img/x/500.webp' => 'pixels',
+    'static/site.css' => 'css', 'index.html' => 'home',
+  });
+  syncer()->sync;
+  my ($first_page) = grep {; $put_order[$_] =~ /\.html\z/ } keys @put_order;
+  my @late_files = grep {; $_ !~ /\.html\z/ } @put_order[ $first_page .. $#put_order ];
+  is_deeply(\@late_files, [], 'no file after the first page');
+  is(0 + @put_order, 4, '...of four');
+};
+
+subtest 'if a file fails to upload, no pages are' => sub {
+  %stored = (); @put_order = ();
+  $tmp->child('state', 'bunny-uploaded.json')->remove;
+  build_site({ 'static/site.css' => 'new css', 'index.html' => 'new home' });
+  %fail = ('static/site.css' => 1);
+  ok(! eval { syncer()->sync; 1 }, 'the sync dies');
+  like($@, qr/so no pages were uploaded and nothing was deleted/, '...saying so');
+  ok(! exists $stored{'index.html'}, '...and the page is not uploaded');
+  %fail = ();
 };
 
 subtest 'a file put in the zone some other way is left alone' => sub {

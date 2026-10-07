@@ -48,9 +48,14 @@ it stopped.  Anything put in the zone by other means is left alone.
 Bunny serves F<bunnycdn_errors/404.html> for a missing path, so the site's
 F<404.html> is uploaded there too.
 
-Every deletion waits until every upload has succeeded, so the live site
-never links to something already gone.  If any upload fails, nothing is
-deleted.
+Pages go live only after what they refer to: every other file (stylesheets,
+scripts, renditions, data) is uploaded first, and the HTML only once all of
+those have succeeded.  Otherwise a page could ask for a stylesheet by its
+new version (see L<Jiggle::Site/static_url>) while the old one is still in
+storage, and a visitor's browser would keep the old one under the new name.
+Likewise, every deletion waits until every upload has succeeded, so the
+live site never links to something already gone.  If any upload fails,
+nothing is deleted.
 
 Then the CDN's cache is purged of every URL changed or deleted, on each of
 the pull zone's hostnames (or C<purge_hosts>, if given).  That's required, not just tidy: a rendition's URL stays the
@@ -140,12 +145,15 @@ sub _save_record ($self) {
   $self->_record_file->spew_raw($JSON->encode({ version => 1, files => $self->_record }));
 }
 
+sub _is_page ($rel) { $rel =~ /\.html\z/ }
+
 =method plan
 
   my ($upload, $delete) = $sync->plan;
 
-This returns two array references: the paths that need uploading, and the
-paths that need deleting, each sorted.
+This returns two array references: the paths that need uploading, in the
+order they'll be uploaded (pages last), and the paths that need deleting,
+sorted.
 
 =cut
 
@@ -165,6 +173,7 @@ sub plan ($self) {
   my @upload = grep {;
     ! $have->{$_} or $JSON->encode($have->{$_}) ne $JSON->encode($want->{$_})
   } sort keys %$want;
+  @upload = ((grep {; ! _is_page($_) } @upload), (grep {; _is_page($_) } @upload));
   my @delete = grep {; ! $want->{$_} } sort keys %$have;
 
   return (\@upload, \@delete, $want);
@@ -203,10 +212,18 @@ sub sync ($self, $arg = {}) {
     $self->_save_record if ++$saved % 200 == 0;
   };
 
-  my %failed = map {; $_ => 1 } $self->_each('uploading', $upload, sub ($rel) {
+  my $upload_one = sub ($rel) {
     $self->_upload_p($rel)->then(sub { $ok->($rel, $want->{$rel}) });
-  });
+  };
+
+  my @files = grep {; ! _is_page($_) } @$upload;
+  my @pages = grep {;   _is_page($_) } @$upload;
+
+  my %failed = map {; $_ => 1 } $self->_each('uploading files', \@files, $upload_one);
+  my $files_failed = %failed;
+  $failed{$_} = 1 for $files_failed ? () : $self->_each('uploading pages', \@pages, $upload_one);
   my $upload_failed = %failed;
+  my @tried = $files_failed ? @files : @$upload;
 
   unless ($upload_failed) {
     $failed{$_} = 1 for $self->_each('deleting', $delete, sub ($rel) {
@@ -219,14 +236,15 @@ sub sync ($self, $arg = {}) {
   # Whatever did get uploaded or deleted is purged even if something failed,
   # so the cache doesn't go on serving what was replaced or removed until
   # the next sync.  -- claude, 2026-10-01
-  $result{uploaded} = [ grep {; ! $failed{$_} } @$upload ];
+  $result{uploaded} = [ grep {; ! $failed{$_} } @tried ];
   $result{deleted}  = $upload_failed ? [] : [ grep {; ! $failed{$_} } @$delete ];
   $result{purged}   = $arg->{purge_all} ? $self->_purge_all
                      : $self->_purge([ $result{uploaded}->@*, $result{deleted}->@* ]);
 
   die sprintf "%d request(s) failed%s; sync again to retry:\n%s",
     0 + keys %failed,
-    ($upload_failed ? ', so nothing was deleted' : ''),
+    ($files_failed ? ', so no pages were uploaded and nothing was deleted'
+     : $upload_failed ? ', so nothing was deleted' : ''),
     join '', map {; "  $_\n" } sort keys %failed
     if %failed;
 
