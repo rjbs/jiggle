@@ -247,6 +247,12 @@ has albums => (
   default  => sub ($self) {
     my @albums;
 
+    # Duplicates are dropped when read, so these build as usual, but their
+    # files should be fixed.
+    my @dup = sort map {; $_->had_duplicate_photos ? $_->slug : () } $self->library->albums;
+    $self->logger->(sprintf 'warning: %d album(s) list a photo more than once, used once: %s',
+      0 + @dup, join q{ }, @dup) if @dup;
+
     for my $album ($self->library->albums) {
       my @photos = grep {; defined } map {; $self->_photo_by_id->{$_} }
                    $album->photos->@*;

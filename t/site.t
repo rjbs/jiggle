@@ -522,6 +522,16 @@ sub page_links_ok ($desc, $dir, $page, @hrefs) {
   }
 }
 
+subtest 'an album listing a photo twice' => sub {
+  my ($site, $dir) = built_site(
+    photos => [ { id => 'twice001' }, { id => 'once0001' } ],
+    albums => [ { slug => 'lyon', title => 'Lyon', photos => [ qw( twice001 once0001 twice001 ) ] } ],
+  );
+  my @tiles = $dir->child('albums/lyon/index.html')->slurp_utf8 =~ m{<li[^>]*><a href="/albums/lyon/([^/"]+)/"}g;
+  is_deeply(\@tiles, [ qw( twice001 once0001 ) ], 'it appears once');
+  neighbors_are('...with one page', $dir, 'albums/lyon/once0001/index.html', { prev => '/albums/lyon/twice001/' });
+};
+
 subtest 'archive by year and month' => sub {
   my ($site, $dir) = built_site(
     photos => [
