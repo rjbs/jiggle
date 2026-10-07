@@ -264,8 +264,11 @@ h1 .count, h2 .count { font-weight: normal; margin-left: 0.5em; }
   width: 12em;
 }
 
-/* Pagefind's search UI takes its colors from these. */
-:root {
+/* Pagefind's search UI takes its colors from these.  Its own stylesheet
+   sets them on :root, and loads after this one, so they're set here on the
+   search box's container, which its descendants inherit from first.
+   -- claude, 2026-10-07 */
+#search {
   --pagefind-ui-primary: var(--accent);
   --pagefind-ui-text: var(--fg);
   --pagefind-ui-background: var(--bg);
@@ -273,4 +276,10 @@ h1 .count, h2 .count { font-weight: normal; margin-left: 0.5em; }
   --pagefind-ui-tag: var(--tile-bg);
   --pagefind-ui-font: inherit;
   --pagefind-ui-image-box-ratio: 4 / 3;
+}
+
+#search mark {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  color: inherit;
+  border-radius: 2px;
 }
