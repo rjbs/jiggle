@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><%= $page_title %></title>
-<link rel="stylesheet" href="/static/jiggle.css">
+<link rel="stylesheet" href="<%= $site->static_url('jiggle.css') %>">
 % if ($noindex) {
 <meta name="robots" content="noindex">
 % }
@@ -13,7 +13,7 @@
 <link rel="canonical" href="<%= $canonical %>">
 % }
 <link rel="alternate" type="application/atom+xml" href="/feed.xml" title="<%== $site->attr_text($site->site_title) %>">
-<script src="/static/jiggle-keys.js" defer></script>
+<script src="<%= $site->static_url('jiggle-keys.js') %>" defer></script>
 % if ($og) {
 <meta property="og:type" content="<%= $og->{video} ? 'video.other' : 'website' %>">
 <meta property="og:site_name" content="<%== $site->attr_text($site->site_title) %>">
@@ -35,9 +35,9 @@
 <meta name="twitter:card" content="summary_large_image">
 % }
 % if ($map) {
-<link rel="stylesheet" href="/static/maplibre/maplibre-gl.css">
-<script src="/static/maplibre/maplibre-gl.js"></script>
-<script src="/static/jiggle-map.js"></script>
+<link rel="stylesheet" href="<%= $site->static_url('maplibre/maplibre-gl.css') %>">
+<script src="<%= $site->static_url('maplibre/maplibre-gl.js') %>"></script>
+<script src="<%= $site->static_url('jiggle-map.js') %>"></script>
 % }
 </head>
 <body>

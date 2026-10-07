@@ -5,6 +5,7 @@ use Moo;
 
 use Jiggle ();
 use Jiggle::Markdown ();
+use Digest::SHA ();
 use Encode ();
 use HTML::Entities ();
 use JSON::MaybeXS ();
@@ -1206,6 +1207,25 @@ sub _geojson ($self) {
   }
 
   return { type => 'FeatureCollection', features => \@features };
+}
+
+=method static_url
+
+  my $url = $site->static_url('jiggle.css');  # /static/jiggle.css?v=1a2b3c4d5e
+
+This returns the URL of a file from the share directory's F<static>, with a
+version taken from its contents.  Browsers keep these files for a month, so
+without the version, a changed stylesheet wouldn't reach anyone who had
+visited recently; with it, a changed file has a new URL.
+
+=cut
+
+has _static_versions => (is => 'ro', init_arg => undef, default => sub { {} });
+
+sub static_url ($self, $path) {
+  my $v = $self->_static_versions->{$path} //= substr(
+    Digest::SHA::sha1_hex($self->share_dir->child('static', $path)->slurp_raw), 0, 10);
+  return "/static/$path?v=$v";
 }
 
 sub _copy_static ($self) {
