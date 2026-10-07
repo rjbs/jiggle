@@ -303,6 +303,13 @@ storage.  Bunny rate-limits purges, so a top-level directory with many
 changes is purged by prefix; renditions live under `/img/`, apart from the
 pages, so that a change to every page purges none of them.
 
+The pull zone's caching settings matter, and live in Bunny's dashboard:
+the edge keeps everything for a month (sync purges what changes), but
+browsers are told `max-age=0`, so they check before reusing a page or
+stylesheet (a quick 304, by ETag or Last-Modified), except for renditions
+under `/img/`, which an edge rule lets browsers keep for a month.  So a
+stylesheet change is one upload, not a change to every page.
+
 ## Ingest
 
 `jiggle ingest <dir>`: for each file, hash it, skip it if that hash is already
