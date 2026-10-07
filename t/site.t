@@ -93,7 +93,8 @@ ok(-e $udir->child('img/unl00001/1024.webp'), '...and renditions');
 unlisted_file_ok('a listed photo is indexed', 'p/pub00001/index.html',
   has => [ qr/data-pagefind-body/ ], lacks => [ $noindex ]);
 
-unlisted_file_ok('its album shows it', 'albums/trip/index.html', has => [ $links_unl ], lacks => [ $noindex ]);
+unlisted_file_ok('its album shows it', 'albums/trip/index.html',
+  has => [ qr{href="/albums/trip/unl00001/"} ], lacks => [ $noindex ]);
 unlisted_file_ok('the home page omits it', 'index.html', lacks => [ $links_unl, qr{/albums/hidden/} ]);
 unlisted_file_ok('the feed omits it', 'feed.xml', lacks => [ $links_unl, qr{/albums/hidden/} ]);
 unlisted_file_ok('tags omit it', 'tags/vienna/index.html', lacks => [ $links_unl ]);
@@ -102,9 +103,25 @@ unlisted_file_ok('the archive omits it', '2026/07/index.html', lacks => [ $links
 unlisted_file_ok('the map omits it', 'map/photos.geojson', lacks => [ qr/unl00001/ ]);
 neighbors_are('neighbors skip it', $udir, 'p/pub00002/index.html', { prev => '/p/pub00001/' });
 neighbors_are('...both ways', $udir, 'p/pub00001/index.html', { next => '/p/pub00002/' });
+neighbors_are("an unlisted photo's own page has none", $udir, 'p/unl00001/index.html', {});
+
+# Each photo in an album has a page there, too, whose neighbors are the
+# album's.
+neighbors_are('in an album', $udir, 'albums/trip/unl00001/index.html', { next => '/albums/trip/pub00001/' });
+neighbors_are('...the last in it', $udir, 'albums/trip/pub00001/index.html', { prev => '/albums/trip/unl00001/' });
+neighbors_are('...alone in it', $udir, 'albums/hidden/unl00002/index.html', {});
+unlisted_file_ok('a photo page in an album', 'albums/trip/pub00001/index.html',
+  has => [
+    qr{<link rel="canonical" href="[^"]*/p/pub00001/">},
+    qr{<meta property="og:url" content="[^"]*/p/pub00001/">},
+    qr{<a href="/albums/trip/">Trip</a>,\s+2 of 2},
+  ],
+  lacks => [ qr/data-pagefind-body/, $noindex ]);
+unlisted_file_ok("...an unlisted photo's", 'albums/trip/unl00001/index.html', has => [ $noindex ]);
+ok(! -e $udir->child('albums/trip/pub00002'), 'a photo not in the album has no page there');
 
 unlisted_file_ok('an album of only unlisted photos has a page', 'albums/hidden/index.html',
-  has => [ qr{href="/p/unl00002/"}, $noindex ]);
+  has => [ qr{href="/albums/hidden/unl00002/"}, $noindex ]);
 unlisted_file_ok('...but is not on the albums index', 'albums/index.html',
   has => [ qr{/albums/trip/} ], lacks => [ qr{/albums/hidden/} ]);
 

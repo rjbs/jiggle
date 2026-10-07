@@ -9,6 +9,9 @@
 % if ($noindex) {
 <meta name="robots" content="noindex">
 % }
+% if ($canonical) {
+<link rel="canonical" href="<%= $canonical %>">
+% }
 <link rel="alternate" type="application/atom+xml" href="/feed.xml" title="<%== $site->attr_text($site->site_title) %>">
 <script src="/static/jiggle-keys.js" defer></script>
 % if ($og) {
