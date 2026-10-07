@@ -24,6 +24,22 @@ has description => (is => 'ro', default  => '');
 has cover       => (is => 'ro');
 has photos      => (is => 'ro', default  => sub { [] });
 
+# A photo is in an album once.  An album file might list one twice (two
+# identical uploads in one Flickr album become one photo, since ids come
+# from content), so only the first is kept, and this notes that the file
+# should be fixed.  -- claude, 2026-10-07
+has had_duplicate_photos => (is => 'ro', init_arg => '_had_duplicate_photos', default => 0);
+
+around BUILDARGS => sub ($orig, $class, @args) {
+  my $arg = $class->$orig(@args);
+  return $arg unless ref $arg->{photos} eq 'ARRAY';
+
+  my %seen;
+  my @photos = grep {; ! $seen{$_}++ } $arg->{photos}->@*;
+  return $arg if @photos == $arg->{photos}->@*;
+  return { %$arg, photos => \@photos, _had_duplicate_photos => 1 };
+};
+
 # Only on albums imported from Flickr: the photoset's id.
 has flickr_id   => (is => 'ro');
 

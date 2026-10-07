@@ -45,10 +45,11 @@ subtest 'only public photo pages are indexed' => sub {
       { id => 'pub00001', title => 'Stephansdom', tags => [ 'church' ] },
       { id => 'priv0001', title => 'Secret', visibility => 'private' },
     ],
+    albums => [ { slug => 'vienna', title => 'Vienna', photos => [ 'pub00001' ] } ],
     site => { search => $search },
   );
 
-  indexed_urls_are('photo pages, and nothing else', $dir, [ '/p/pub00001/' ]);
+  indexed_urls_are('photo pages, and nothing else (not their pages in albums)', $dir, [ '/p/pub00001/' ]);
   like(indexed($dir)->{'/p/pub00001/'}, qr/Stephansdom.*church/, 'title and tags indexed');
   unlike(indexed($dir)->{'/p/pub00001/'}, qr/\bTags\b/, 'labels are not indexed');
 };

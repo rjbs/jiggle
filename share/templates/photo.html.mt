@@ -1,6 +1,7 @@
 % my ($w, $h) = $site->rendition_size($photo, '2048.webp');
-% # Unlisted photos aren't marked for the search index, so they aren't in it.
-<article class="photo"<%== $photo->is_listed ? ' data-pagefind-body' : '' %> data-pagefind-meta="image:<%= $site->rendition_url($photo, 'h480.webp') %>">
+% # Unlisted photos aren't marked for the search index, so they aren't in it,
+% # and nor are photos' pages within albums, which are copies.
+<article class="photo"<%== $photo->is_listed && ! $in_album ? ' data-pagefind-body' : '' %> data-pagefind-meta="image:<%= $site->rendition_url($photo, 'h480.webp') %>">
   <figure>
 % if ($photo->is_video) {
 %   my ($vw, $vh) = $site->rendition_size($photo, 'video.mp4');
@@ -20,11 +21,15 @@
 % }
   </figure>
   <nav class="neighbors" data-pagefind-ignore>
-% if ($earlier) {
-    <a rel="prev" href="<%= $site->photo_url($earlier) %>">&larr; earlier</a>
+% if ($prev) {
+    <a rel="prev" href="<%= $prev->{url} %>">&larr; <%= $prev->{label} %></a>
 % }
-% if ($later) {
-    <a rel="next" href="<%= $site->photo_url($later) %>">later &rarr;</a>
+% if ($in_album) {
+    <span class="in-album"><a href="/albums/<%= $in_album->{album}{slug} %>/"><%= $in_album->{album}{title} %></a>,
+      <%= $in_album->{position} %> of <%= $in_album->{count} %></span>
+% }
+% if ($next) {
+    <a rel="next" href="<%= $next->{url} %>"><%= $next->{label} %> &rarr;</a>
 % }
   </nav>
   <div class="photo-info">

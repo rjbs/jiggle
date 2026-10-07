@@ -247,6 +247,12 @@ has albums => (
   default  => sub ($self) {
     my @albums;
 
+    # Duplicates are dropped when read, so these build as usual, but their
+    # files should be fixed.
+    my @dup = sort map {; $_->had_duplicate_photos ? $_->slug : () } $self->library->albums;
+    $self->logger->(sprintf 'warning: %d album(s) list a photo more than once, used once: %s',
+      0 + @dup, join q{ }, @dup) if @dup;
+
     for my $album ($self->library->albums) {
       my @photos = grep {; defined } map {; $self->_photo_by_id->{$_} }
                    $album->photos->@*;
@@ -414,6 +420,9 @@ sub month_of ($self, $photo) {
 
 sub photo_url ($self, $photo) { '/p/' . $photo->id . '/' }
 
+# A photo's page within an album, whose neighbors are the album's.
+sub album_photo_url ($self, $album, $photo) { "/albums/$album->{slug}/" . $photo->id . '/' }
+
 # Renditions live apart from pages, so that the CDN's cache of pages can be
 # purged by prefix without purging the renditions, which rarely change.
 # -- claude, 2026-10-02
@@ -553,6 +562,16 @@ sub excerpt ($self, $text, $max = 200) {
 
 has _mt_cache => (is => 'ro', init_arg => undef, default => sub { {} });
 
+# Mojo::Template declares a template's variables from the keys passed on its
+# first use, so a variable only some callers pass would be undeclared for
+# the others.  These are given to every use, so they're always declared.
+# -- claude, 2026-10-07
+my %TEMPLATE_DEFAULTS = (
+  _grid  => { in_album => undef },
+  layout => { canonical => undef },
+  photo  => { in_album => undef, canonical => undef },
+);
+
 sub render ($self, $template, $vars = {}) {
   my $file = $self->share_dir->child('templates', "$template.html.mt");
 
@@ -562,7 +581,7 @@ sub render ($self, $template, $vars = {}) {
     name        => "$file",
   )->parse($file->slurp_utf8);
 
-  my $out = $mt->process({ site => $self, %$vars });
+  my $out = $mt->process({ site => $self, ($TEMPLATE_DEFAULTS{$template} // {})->%*, %$vars });
   die $out if ref $out;  # a Mojo::Exception
   return $out;
 }
@@ -582,6 +601,7 @@ sub render_page ($self, $template, $vars) {
     og      => $vars->{og} // ($vars->{photo} ? $self->opengraph($vars->{photo}) : undef),
     map     => ($template eq 'map' || $vars->{location}) ? 1 : 0,
     noindex => $vars->{noindex} ? 1 : 0,
+    canonical => $vars->{canonical},
   });
 }
 
@@ -676,6 +696,7 @@ sub build ($self) {
 
   $self->_phase('photo pages',     sub { $self->_build_photo_pages(\@photos) });
   $self->_phase('albums and tags', sub { $self->_build_collections });
+  $self->_phase('album photo pages', sub { $self->_build_album_photo_pages });
   $self->_phase('archive',         sub { $self->_build_archive });
 
   $self->_phase('map, search page, and static files', sub {
@@ -745,8 +766,9 @@ sub _build_photo_pages ($self, $photos) {
   });
 
   # Each page links to the nearest listed photos, later and earlier, so no
-  # listed page links to an unlisted one.  The photos are newest first.
-  # -- claude, 2026-10-06
+  # listed page links to an unlisted one.  An unlisted photo's own page has
+  # no neighbors: it's reached from an album, whose own page for it has the
+  # album's.  The photos are newest first.  -- claude, 2026-10-06
   my (@later, @earlier, $last);
   for my $i (keys @photos) {
     $later[$i] = $last;
@@ -768,8 +790,10 @@ sub _build_photo_pages ($self, $photos) {
       title    => $self->display_title($photo),
       photo    => $photo,
       location => scalar $self->public_location($photo),
-      earlier  => $earlier[$i],
-      later    => $later[$i],
+      ($photo->is_listed ? (
+        prev => $earlier[$i] && { url => $self->photo_url($earlier[$i]), label => 'earlier' },
+        next => $later[$i]   && { url => $self->photo_url($later[$i]),   label => 'later' },
+      ) : (prev => undef, next => undef)),
       albums   => $self->albums_for($photo),
       noindex  => ! $photo->is_listed,
     });
@@ -824,6 +848,43 @@ sub embed_data ($self, $photo) {
     renditions => { map {; $_ => $rendition->($_) } qw( 500.webp 1024.webp 2048.webp ) },
     video  => ($photo->is_video ? $rendition->('video.mp4') : undef),
   };
+}
+
+# Each photo in an album has a page there, too, at /albums/SLUG/ID/, whose
+# neighbors are its neighbors in the album, so a visitor can go through an
+# album in its order.  These are copies of the photo's own page, so they name
+# it as canonical, and they're left out of the search index, or every
+# album's photos would be found two or three times.  -- claude, 2026-10-07
+sub _build_album_photo_pages ($self) {
+  my @albums = $self->albums->@*;
+
+  my $progress = Jiggle::Progress->new({
+    label  => 'album photo pages',
+    total  => List::Util::sum0(map {; 0 + $_->{photos}->@* } @albums),
+    logger => $self->logger,
+  });
+
+  for my $album (@albums) {
+    my @photos = $album->{photos}->@*;
+    for my $i (keys @photos) {
+      $progress->tick;
+      my ($photo, $prev, $next) = ($photos[$i], ($i ? $photos[$i - 1] : undef), $photos[$i + 1]);
+
+      $self->_write_page('albums/' . $album->{slug} . '/' . $photo->id . '/index.html', 'photo', {
+        title     => $self->display_title($photo),
+        photo     => $photo,
+        location  => scalar $self->public_location($photo),
+        albums    => $self->albums_for($photo),
+        noindex   => ! ($photo->is_listed and $album->{listed}),
+        canonical => $self->absolute_url($self->photo_url($photo)),
+        prev      => $prev && { url => $self->album_photo_url($album, $prev), label => 'previous' },
+        next      => $next && { url => $self->album_photo_url($album, $next), label => 'next' },
+        in_album  => { album => $album, position => $i + 1, count => 0 + @photos },
+      });
+    }
+  }
+
+  return;
 }
 
 sub _build_collections ($self) {

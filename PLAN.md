@@ -191,7 +191,9 @@ are never linked into `site/`.
 * `/p/<id>/` — photo page (its renditions are under `/img/<id>/`): large
   image with `srcset`, title, description,
   date, tags, albums, small map, OpenGraph tags
-* `/albums/` and `/albums/<slug>/`
+* `/albums/` and `/albums/<slug>/`; `/albums/<slug>/<id>/` is a photo's page
+  within the album, whose arrows go through the album in its order (it names
+  `/p/<id>/` as canonical, and isn't in the search index)
 * `/tags/` and `/tags/<tag>/`
 * `/archive/` — every year, with a count and a sample of photos
 * `/<year>/` — each month of the year, with a sample; `/<year>/<month>/` —

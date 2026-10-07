@@ -186,7 +186,7 @@ zones or with private locations, and every published location is rounded.
 **Committed once shared:** the URLs.
 
     /p/<id>/                 a photo's page, and /p/<id>/embed.json
-    /albums/<slug>/
+    /albums/<slug>/          an album, and /albums/<slug>/<id>/, a photo in it
     /tags/<tag slug>/
     /<year>/  /<year>/<month>/  /archive/
     /map/  /search/  /feed.xml
