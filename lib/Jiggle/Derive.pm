@@ -278,6 +278,10 @@ sub mark_current ($self, $photo) {
 This makes any missing or stale renditions for the given photos, working on
 several photos at once.  It returns the number of renditions made.
 
+If there's anything to make and the originals directory isn't there (as when
+it's a link to a disk that isn't mounted), this dies before making anything,
+rather than recording every photo as failed.
+
 =cut
 
 # True if this photo's renditions failed before, and its original hasn't
@@ -302,6 +306,13 @@ sub derive_photos ($self, @photos) {
     $self->save_manifest;
     return 0;
   }
+
+  # Without this, each photo would fail, and be remembered as failed, so an
+  # unmounted disk of originals would leave renditions quietly missing until a
+  # build with --verify.  -- claude, 2026-10-10
+  my $originals = $self->library->originals_dir;
+  die "can't make renditions for " . @work . " photo(s): $originals isn't available\n"
+    unless -d $originals;
 
   $self->logger->(sprintf "deriving renditions for %d photo(s)", 0 + @work);
 

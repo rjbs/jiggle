@@ -218,6 +218,35 @@ subtest 'an unreadable original is reported, not fatal' => sub {
   is_deeply([ $verify->failed ], [ $b->id ], 'with verify, it is retried');
 };
 
+subtest 'originals that are not there stop derive, and are not remembered' => sub {
+  my $file = $tmp->child('src/elsewhere.jpg');
+  $file->parent->mkpath;
+  run('vips', 'gaussnoise', "$file", 320, 240);
+
+  my $root = $tmp->child('lib-unmounted');
+  $root->child('jiggle.toml')->touchpath->spew_utf8("format = $Jiggle::Library::FORMAT\n");
+  my $library = Jiggle::Library->new({ root => $root });
+  my ($photo) = Jiggle::Ingest->new({ library => $library })->ingest_files($file);
+
+  # Originals on a disk that isn't mounted: a link to nowhere.
+  my $originals = $library->originals_dir;
+  my $moved = $tmp->child('nas-originals');
+  rename "$originals", "$moved" or die "can't move originals: $!";
+  symlink "$moved", "$originals" or die "can't link originals: $!";
+  rename "$moved", "$moved.away" or die "can't unmount originals: $!";
+
+  my $derive = Jiggle::Derive->new({ library => $library, jobs => 1 });
+  ok(! eval { $derive->derive_photos($photo); 1 }, 'derive_photos died');
+  like($@, qr/isn't available/, '...saying the originals are missing');
+
+  rename "$moved.away", "$moved" or die "can't remount originals: $!";
+
+  my $again = Jiggle::Derive->new({ library => $library, jobs => 1 });
+  $again->derive_photos($photo);
+  is_deeply([ $again->failed ], [], 'once they are back, nothing has failed');
+  ok($again->is_complete($photo), '...and the renditions are made');
+};
+
 subtest 'a damaged original is reported by photo' => sub {
   my $file = $tmp->child('src/truncated.jpg');
   $file->parent->mkpath;
