@@ -69,6 +69,11 @@ makes a new library at the current format.
 - On macOS, ingest clones originals (`cp -c`) when the source is on the same
   APFS volume, so importing from a local archive costs no extra space.
 
+`originals/` can be a symlink to another disk, like a slow network one.  Only
+ingest, `remove --remove-original`, and making renditions read it; a build
+with nothing to derive never touches it.  A build that has renditions to make
+while it's missing stops, instead of recording each photo as failed.
+
 **Committed:** the id scheme.  Once photo URLs are shared, changing it would
 break them.
 
