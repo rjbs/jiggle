@@ -532,6 +532,45 @@ subtest 'an album listing a photo twice' => sub {
   neighbors_are('...with one page', $dir, 'albums/lyon/once0001/index.html', { prev => '/albums/lyon/twice001/' });
 };
 
+sub album_data_of ($dir, $slug) {
+  JSON::MaybeXS::decode_json($dir->child('albums', $slug, 'photos.json')->slurp_raw);
+}
+
+subtest 'album data for the viewer' => sub {
+  my ($site, $dir) = built_site(
+    photos => [
+      { id => 'view0001', title => 'the tower' },
+      { id => 'view0002', type => 'video', taken => '2025-07-05T09:00:00',
+        original => { file => 'c.mov', ext => 'mov', sha256 => 'f' x 64, bytes => 1,
+                      width => 1080, height => 1920, duration => 7 } },
+      { id => 'view0003', title => 'private', visibility => 'private' },
+    ],
+    albums => [ { slug => 'tour', title => 'The Tour', photos => [ qw( view0001 view0002 view0003 ) ] } ],
+  );
+
+  my $data = album_data_of($dir, 'tour');
+  is($data->{format}, 1, 'versioned');
+  is($data->{title}, 'The Tour', 'album title');
+  is_deeply([ map {; $_->{id} } $data->{photos}->@* ], [ qw( view0001 view0002 ) ],
+    'published photos, in album order');
+
+  is_deeply($data->{photos}[0], {
+    id     => 'view0001',
+    url    => '/albums/tour/view0001/',
+    title  => 'the tower',
+    width  => 2048,
+    height => 1536,
+    src    => '/img/view0001/1024.webp',
+    srcset => '/img/view0001/500.webp 500w, /img/view0001/1024.webp 1024w, /img/view0001/2048.webp 2048w',
+  }, 'a photo');
+
+  my $video = $data->{photos}[1];
+  is($video->{title}, '5 July 2025, 09:00', 'untitled: the date');
+  is_deeply($video->{video}, { url => '/img/view0002/video.mp4', width => 1080, height => 1920 },
+    'a video has its video');
+  is_deeply([ @$video{qw( width height )} ], [ 1080, 1920 ], "...and its poster's size, unscaled");
+};
+
 subtest 'archive by year and month' => sub {
   my ($site, $dir) = built_site(
     photos => [

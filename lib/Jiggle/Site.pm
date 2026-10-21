@@ -850,6 +850,63 @@ sub embed_data ($self, $photo) {
   };
 }
 
+=method album_data
+
+  my $data = $site->album_data($album);
+
+This returns what the full-screen viewer needs to show an album, which is
+published as F</albums/SLUG/photos.json>: the album's title, and its photos
+in order, each as from L</viewer_entry>.
+
+C<format> is the version of this structure, for the viewer to check.
+
+=cut
+
+sub album_data ($self, $album) {
+  return {
+    format => 1,
+    slug   => $album->{slug},
+    title  => $album->{title},
+    photos => [ map {; $self->viewer_entry($album, $_) } $album->{photos}->@* ],
+  };
+}
+
+=method viewer_entry
+
+  my $entry = $site->viewer_entry($album, $photo);
+
+This returns one photo as the viewer shows it: its id, the URL of its page
+within the album, its display title, the C<src> and C<srcset> of its image
+(for a video, of its poster) with the size of the largest, and, for a video,
+the URL and size of the video.  URLs are site-relative.
+
+=cut
+
+sub viewer_entry ($self, $album, $photo) {
+  my ($w, $h) = $self->rendition_size($photo, '2048.webp');
+
+  my $entry = {
+    id     => $photo->id,
+    url    => $self->album_photo_url($album, $photo),
+    title  => $self->display_title($photo),
+    width  => $w,
+    height => $h,
+    src    => $self->rendition_url($photo, '1024.webp'),
+    srcset => $self->srcset($photo),
+  };
+
+  if ($photo->is_video) {
+    my ($vw, $vh) = $self->rendition_size($photo, 'video.mp4');
+    $entry->{video} = {
+      url    => $self->rendition_url($photo, 'video.mp4'),
+      width  => $vw,
+      height => $vh,
+    };
+  }
+
+  return $entry;
+}
+
 # Each photo in an album has a page there, too, at /albums/SLUG/ID/, whose
 # neighbors are its neighbors in the album, so a visitor can go through an
 # album in its order.  These are copies of the photo's own page, so they name
@@ -905,6 +962,7 @@ sub _build_collections ($self) {
         $self->excerpt($self->description_text($album->{description} // ''))
           || _count(0 + $album->{photos}->@*, 'photo')),
     });
+    $self->writer->write_file("albums/$album->{slug}/photos.json", $JSON->encode($self->album_data($album)));
   }
 
   $self->_write_page('tags/index.html', 'tags', {
