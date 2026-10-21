@@ -193,7 +193,9 @@ are never linked into `site/`.
   date, tags, albums, small map, OpenGraph tags
 * `/albums/` and `/albums/<slug>/`; `/albums/<slug>/<id>/` is a photo's page
   within the album, whose arrows go through the album in its order (it names
-  `/p/<id>/` as canonical, and isn't in the search index)
+  `/p/<id>/` as canonical, and isn't in the search index); `/albums/<slug>/photos.json`
+  is the album's list for the full-screen viewer, which the album page and
+  its photo pages open (see jiggle-viewer.js)
 * `/tags/` and `/tags/<tag>/`
 * `/archive/` — every year, with a count and a sample of photos
 * `/<year>/` — each month of the year, with a sample; `/<year>/<month>/` —
