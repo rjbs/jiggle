@@ -571,6 +571,22 @@ subtest 'album data for the viewer' => sub {
   is_deeply([ @$video{qw( width height )} ], [ 1080, 1920 ], "...and its poster's size, unscaled");
 };
 
+# The viewer's button, with the photo it opens on as JSON in an attribute.
+sub viewer_opens_ok ($desc, $file, $id, $position) {
+  my $html = $udir->child($file)->slurp_utf8;
+  like($html, qr{<script src="/static/jiggle-viewer\.js" defer>}, "$desc: loads the viewer");
+  like($html,
+    qr{<button type="button" class="viewer-open" data-list="/albums/trip/photos\.json" data-photo="[^"]*&quot;id&quot;:&quot;\Q$id\E&quot;[^"]*" data-position="\Q$position\E">Full screen</button>},
+    "$desc: opens it on $id, at $position");
+}
+
+subtest 'the full-screen viewer' => sub {
+  viewer_opens_ok('the album page', 'albums/trip/index.html', 'unl00001', 1);
+  viewer_opens_ok("a photo's page in the album", 'albums/trip/pub00001/index.html', 'pub00001', 2);
+  unlisted_file_ok("a photo's own page has no viewer", 'p/pub00001/index.html', lacks => [ qr{jiggle-viewer|viewer-open} ]);
+  unlisted_file_ok('nor does the home page', 'index.html', lacks => [ qr{jiggle-viewer|viewer-open} ]);
+};
+
 subtest 'archive by year and month' => sub {
   my ($site, $dir) = built_site(
     photos => [

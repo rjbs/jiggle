@@ -283,3 +283,115 @@ h1 .count, h2 .count { font-weight: normal; margin-left: 0.5em; }
   color: inherit;
   border-radius: 2px;
 }
+
+/* The full-screen viewer (jiggle-viewer.js): a fixed black overlay, or the
+   fullscreen element, holding a horizontal track of slides that snap one at
+   a time.  Its button is hidden until the script has loaded. */
+.viewer-open {
+  display: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.viewer-open:hover { text-decoration: underline; }
+.has-viewer .viewer-open { display: inline; }
+.has-viewer .photo figure img { cursor: zoom-in; }
+.neighbors .in-album .viewer-open { margin-left: 0.75em; }
+.album-actions { margin: -0.5rem 0 1rem; }
+
+html.viewing { overflow: hidden; }
+
+.viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+  color: #fff;
+}
+
+.viewer-track {
+  display: flex;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior: contain;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+.viewer-track::-webkit-scrollbar { display: none; }
+
+.viewer-slide {
+  position: relative;
+  flex: 0 0 100%;
+  height: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.viewer-slide img,
+.viewer-slide video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.viewer-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 72px;
+  height: 72px;
+  margin: -36px 0 0 -36px;
+  padding: 0;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.viewer-play::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -14px 0 0 -9px;
+  border-style: solid;
+  border-width: 14px 0 14px 24px;
+  border-color: transparent transparent transparent #fff;
+}
+
+.viewer-caption {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2rem 1rem 1rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+}
+.viewer-captions .viewer-caption { display: block; }
+.viewer-count { display: block; color: #bbb; font-size: 0.85rem; }
+
+.viewer-close {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  font-size: 28px;
+  line-height: 44px;
+  cursor: pointer;
+  opacity: 0.6;
+}
+.viewer-close:hover { opacity: 1; }

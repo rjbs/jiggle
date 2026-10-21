@@ -14,6 +14,9 @@
 % }
 <link rel="alternate" type="application/atom+xml" href="/feed.xml" title="<%== $site->attr_text($site->site_title) %>">
 <script src="/static/jiggle-keys.js" defer></script>
+% if ($viewer) {
+<script src="/static/jiggle-viewer.js" defer></script>
+% }
 % if ($og) {
 <meta property="og:type" content="<%= $og->{video} ? 'video.other' : 'website' %>">
 <meta property="og:site_name" content="<%== $site->attr_text($site->site_title) %>">

@@ -600,6 +600,7 @@ sub render_page ($self, $template, $vars) {
     content => Mojo::ByteStream->new($content),
     og      => $vars->{og} // ($vars->{photo} ? $self->opengraph($vars->{photo}) : undef),
     map     => ($template eq 'map' || $vars->{location}) ? 1 : 0,
+    viewer  => ($template eq 'album' || $vars->{in_album}) ? 1 : 0,
     noindex => $vars->{noindex} ? 1 : 0,
     canonical => $vars->{canonical},
   });
@@ -905,6 +906,20 @@ sub viewer_entry ($self, $album, $photo) {
   }
 
   return $entry;
+}
+
+my $JSON_TEXT = JSON::MaybeXS->new->canonical;  # characters, for templates to escape
+
+=method viewer_entry_json
+
+  <button data-photo="<%= $site->viewer_entry_json($album, $photo) %>">
+
+This is L</viewer_entry> as JSON text, for a template to put in an attribute.
+
+=cut
+
+sub viewer_entry_json ($self, $album, $photo) {
+  $JSON_TEXT->encode($self->viewer_entry($album, $photo));
 }
 
 # Each photo in an album has a page there, too, at /albums/SLUG/ID/, whose

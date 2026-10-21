@@ -26,7 +26,8 @@
 % }
 % if ($in_album) {
     <span class="in-album"><a href="/albums/<%= $in_album->{album}{slug} %>/"><%= $in_album->{album}{title} %></a>,
-      <%= $in_album->{position} %> of <%= $in_album->{count} %></span>
+      <%= $in_album->{position} %> of <%= $in_album->{count} %>
+      <button type="button" class="viewer-open" data-list="/albums/<%= $in_album->{album}{slug} %>/photos.json" data-photo="<%= $site->viewer_entry_json($in_album->{album}, $photo) %>" data-position="<%= $in_album->{position} %>">Full screen</button></span>
 % }
 % if ($next) {
     <a rel="next" href="<%= $next->{url} %>"><%= $next->{label} %> &rarr;</a>
