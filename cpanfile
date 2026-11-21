@@ -12,6 +12,8 @@ requires 'perl', '5.036';
 
 requires 'App::Cmd', '0.339';
 requires 'CommonMark';
+requires 'DateTime';
+requires 'HTML::Parser';
 requires 'Image::ExifTool';
 requires 'JSON::MaybeXS';
 requires 'List::Util', '1.50';
@@ -21,6 +23,7 @@ requires 'Parallel::ForkManager';
 requires 'File::ShareDir';
 requires 'Path::Tiny';
 requires 'TOML::Tiny', '0.20';
+requires 'XML::LibXML';
 
 on test => sub {
   requires 'Test::Deep';
