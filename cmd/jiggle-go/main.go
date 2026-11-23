@@ -5,7 +5,7 @@
 //	jiggle-go check --db FILE [--dump FILE]
 //	jiggle-go build --db FILE --library DIR --out DIR [--no-search] [--verify]
 //	jiggle-go sitediff --perl DIR --go DIR
-//	jiggle-go serve --db FILE --library DIR [--listen ADDR]
+//	jiggle-go serve --db FILE --library DIR [--listen ADDR] [--tailnet NAME ...]
 package main
 
 import (
