@@ -10,10 +10,12 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/rjbs/gizmo/sqlitekit"
 
 	"github.com/rjbs/jiggle/internal/derive"
+	"github.com/rjbs/jiggle/internal/publish"
 	"github.com/rjbs/jiggle/internal/store"
 )
 
@@ -129,6 +131,10 @@ func (r *reader) config() map[string]any {
 	r.rows(`SELECT name, value FROM setting`, func(scan func(...any)) {
 		var name, value string
 		scan(&name, &value)
+		// Where the site is published is no part of what Perl dumps.
+		if strings.HasPrefix(name, publish.SettingPrefix) {
+			return
+		}
 		if name == "location_precision" {
 			places, err := strconv.ParseFloat(value, 64)
 			if err != nil && r.err == nil {

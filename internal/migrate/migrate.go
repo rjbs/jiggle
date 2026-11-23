@@ -16,6 +16,7 @@ import (
 
 	"github.com/rjbs/gizmo/sqlitekit"
 
+	"github.com/rjbs/jiggle/internal/publish"
 	"github.com/rjbs/jiggle/internal/store"
 )
 
@@ -139,6 +140,22 @@ func (w *writer) config() error {
 	if c.LocationPrecision != nil {
 		places := fmt.Sprint(*c.LocationPrecision)
 		settings["location_precision"] = &places
+	}
+	if p := c.Publish; p != nil {
+		settings[publish.SettingRsyncTarget] = p.Target
+		settings[publish.SettingRsyncCommand] = p.Rsync
+		if b := p.Bunny; b != nil {
+			settings[publish.SettingBunnyZone] = b.Zone
+			settings[publish.SettingBunnyStorageURL] = b.StorageURL
+			if b.PullZoneID != nil {
+				id := fmt.Sprint(b.PullZoneID)
+				settings[publish.SettingBunnyPullZoneID] = &id
+			}
+			if len(b.PurgeHosts) > 0 {
+				hosts := strings.Join(b.PurgeHosts, " ")
+				settings[publish.SettingBunnyPurgeHosts] = &hosts
+			}
+		}
 	}
 	for name, value := range settings {
 		if value == nil {

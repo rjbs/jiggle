@@ -56,13 +56,27 @@ func (d *datetime) ptr() *string {
 }
 
 type configFile struct {
-	Format            int     `toml:"format"`
-	Title             *string `toml:"title"`
-	BaseURL           *string `toml:"base_url"`
-	Author            *string `toml:"author"`
-	LocationPrecision *int64  `toml:"location_precision"`
-	PrivateZones      []zone  `toml:"private_zone"`
-	Publish           any     `toml:"publish"`
+	Format            int        `toml:"format"`
+	Title             *string    `toml:"title"`
+	BaseURL           *string    `toml:"base_url"`
+	Author            *string    `toml:"author"`
+	LocationPrecision *int64     `toml:"location_precision"`
+	PrivateZones      []zone     `toml:"private_zone"`
+	Publish           *publishTo `toml:"publish"`
+}
+
+// publishTo is where the site is published: by rsync, to Bunny, or both.
+type publishTo struct {
+	Target *string `toml:"target"`
+	Rsync  *string `toml:"rsync"`
+	Bunny  *struct {
+		Zone       *string  `toml:"zone"`
+		StorageURL *string  `toml:"storage_url"`
+		PullZoneID any      `toml:"pull_zone_id"`
+		PurgeHosts []string `toml:"purge_hosts"`
+		Password   *string  `toml:"password"`
+		APIKey     *string  `toml:"api_key"`
+	} `toml:"bunny"`
 }
 
 type zone struct {
@@ -179,15 +193,16 @@ var (
 func readLibrary(root string) (*library, error) {
 	l := &library{root: root}
 
-	if err := decodeFile(filepath.Join(root, "jiggle.toml"), &l.config, "publish"); err != nil {
+	if err := decodeFile(filepath.Join(root, "jiggle.toml"), &l.config); err != nil {
 		return nil, fmt.Errorf("reading jiggle.toml: %w", err)
 	}
 	if l.config.Format != libraryFormat {
 		return nil, fmt.Errorf("the library at %s is format %d, and migrate reads only format %d",
 			root, l.config.Format, libraryFormat)
 	}
-	if l.config.Publish != nil {
-		l.warnf("jiggle.toml: [publish] is not migrated")
+	if b := l.config.Publish; b != nil && b.Bunny != nil && (b.Bunny.Password != nil || b.Bunny.APIKey != nil) {
+		l.warnf("jiggle.toml: Bunny's password and API key are not migrated; " +
+			"give them as BUNNY_STORAGE_PASSWORD and BUNNY_API_KEY")
 	}
 
 	if err := l.readPhotos(); err != nil {

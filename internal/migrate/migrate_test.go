@@ -348,17 +348,28 @@ lat    = 48.2
 lon    = 16.37
 radius = 1200.5
 
+[publish]
+target = "user@example.com:/var/www/photos/"
+
 [publish.bunny]
-zone = "jiggle"
+zone         = "jiggle"
+storage_url  = "https://ny.storage.example.com"
+pull_zone_id = 12345
+purge_hosts  = [ "photos.example.com", "jiggle.example.net" ]
+password     = "a secret"
 `)
 	l.file("meta/.keep", "")
 	db, report := l.migrated()
 
 	rowsAre(t, db, `SELECT name, value FROM setting ORDER BY name`,
-		"base_url|https://photos.example.com/", "location_precision|2", "title|Photos")
+		"base_url|https://photos.example.com/", "location_precision|2",
+		"publish.bunny.pull_zone_id|12345", "publish.bunny.purge_hosts|photos.example.com jiggle.example.net",
+		"publish.bunny.storage_url|https://ny.storage.example.com", "publish.bunny.zone|jiggle",
+		"publish.rsync.target|user@example.com:/var/www/photos/", "title|Photos")
 	rowsAre(t, db, `SELECT lat, lon, radius FROM private_zone ORDER BY lat`,
 		"40|-75|500", "48.2|16.37|1200.5")
-	warningsAre(t, report, "jiggle.toml: [publish] is not migrated")
+	warningsAre(t, report, "jiggle.toml: Bunny's password and API key are not migrated; "+
+		"give them as BUNNY_STORAGE_PASSWORD and BUNNY_API_KEY")
 }
 
 func TestEveryObjectHasItsOwnModseq(t *testing.T) {
