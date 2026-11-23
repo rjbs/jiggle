@@ -37,6 +37,9 @@ type Recipe struct {
 	// original's size.
 	Fit [2]int64
 
+	// Quality is the quality an image is encoded at, of 100.
+	Quality int
+
 	// Publish is false for an intermediate, which is kept but never part
 	// of the site.
 	Publish bool
@@ -49,11 +52,11 @@ type Recipe struct {
 // height.  The width limit only matters for panoramas.
 var Recipes = []Recipe{
 	{Name: "poster.png", Version: 1, Kind: Poster, For: "video"},
-	{Name: "h480.webp", Version: 1, Kind: Image, Fit: [2]int64{1920, 480}, Publish: true},
-	{Name: "500.webp", Version: 1, Kind: Image, Fit: [2]int64{500, 500}, Publish: true},
-	{Name: "1024.webp", Version: 1, Kind: Image, Fit: [2]int64{1024, 1024}, Publish: true},
-	{Name: "2048.webp", Version: 1, Kind: Image, Fit: [2]int64{2048, 2048}, Publish: true},
-	{Name: "og.jpg", Version: 1, Kind: Image, Fit: [2]int64{1200, 1200}, Publish: true},
+	{Name: "h480.webp", Version: 1, Kind: Image, Fit: [2]int64{1920, 480}, Quality: 75, Publish: true},
+	{Name: "500.webp", Version: 1, Kind: Image, Fit: [2]int64{500, 500}, Quality: 80, Publish: true},
+	{Name: "1024.webp", Version: 1, Kind: Image, Fit: [2]int64{1024, 1024}, Quality: 80, Publish: true},
+	{Name: "2048.webp", Version: 1, Kind: Image, Fit: [2]int64{2048, 2048}, Quality: 80, Publish: true},
+	{Name: "og.jpg", Version: 1, Kind: Image, Fit: [2]int64{1200, 1200}, Quality: 85, Publish: true},
 	{Name: "video.mp4", Version: 1, Kind: Video, For: "video", Fit: [2]int64{1920, 1920}, Publish: true},
 }
 
