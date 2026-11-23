@@ -39,30 +39,35 @@ Destroying a photo takes it out of every album it's in; an album whose
 cover it was gets its first remaining photo as its cover, or none.  The
 original is kept, and can still be downloaded.
 
-**`Photo/query`** takes a filter with one property, `query`: a jiggle
-query, which is terms with spaces between, all of which a photo must
-match.
+**`Photo/query`** takes a FilterCondition with these properties, all of
+which a photo must meet, and FilterOperators (`AND`, `OR`, `NOT`) over
+them.
 
-    pending         not yet reviewed (and so not published)
-    private         private
-    public          public: published and listed
-    unlisted        unlisted: published, but listed only in albums
-    all             every photo
-    album:SLUG      in the album with that slug
-    tag:TAG         tagged TAG, compared as the site compares tags (by slug)
-    year:YYYY       taken in that year
-    id:ID           the photo with that id; given more than once, any of them
-    limit:N         only the first N of the photos that match
+| Property | Type | |
+|---|---|---|
+| `visibility` | String | The photo's visibility. |
+| `inAlbum` | Id | An album the photo is in. |
+| `tag` | String | A tag the photo has, compared as the site compares tags, by slug: `High St` finds photos tagged `high-st`. |
+| `takenBefore` | String | The photo was taken before this time. |
+| `takenAfter` | String | The photo was taken at this time or after it. |
 
-An unknown term is `unsupportedFilter`, and an album that doesn't exist is
-`invalidArguments`.  No filter, or an empty query, matches every photo.
+Times are compared as text, and may be cut short: a photo taken in 2026
+is taken after `2026` and before `2027`.  A photo with no date is taken
+neither before nor after anything.
 
-It sorts by `taken`, `added` or `id`.  Times are compared as text, so two
-with different UTC offsets are not in the order they happened in.  Photos
-with no value for a property sort last, either way up.  With no sort,
-photos come in album order when the query names an album (the first
-named, if several), and otherwise in the order they were taken, with
-undated photos last.
+It sorts by `taken`, `added` or `id`, and by `position`, a photo's place
+in the album that the comparator names with a property of its own,
+`inAlbum`:
+
+    { "property": "position", "inAlbum": "ALBUM-ID" }
+
+Photos with no value for what they're sorted by, like those not in that
+album, come last, either way up.  Times are compared as text here too, so
+two with different UTC offsets are not in the order they happened in.
+With no sort, photos come in the order they were taken.
+
+A query written for a person, like `album:trip public`, is the client's to
+turn into a filter.
 
 ## Album
 
@@ -81,9 +86,10 @@ An ordered list of photos.
 
 Destroying an album does nothing to its photos.
 
-**`Album/query`** takes a filter with two properties, both optional:
-`slug`, and `photoId`, the id of a photo the album must hold.  It sorts by
-`slug` (which is the default), `title`, `created` or `id`.
+**`Album/query`** takes a FilterCondition with two properties, `slug` and
+`photoId`, the id of a photo the album must hold, and FilterOperators over
+them.  It sorts by `slug` (which is the default), `title`, `created` or
+`id`.
 
 ## Blobs
 

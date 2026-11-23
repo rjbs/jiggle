@@ -5,10 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"sort"
-	"strings"
 
 	"github.com/rjbs/gizmo/jmap"
-	"github.com/rjbs/gizmo/std"
 )
 
 // object is an object as a client sees it, by property.
@@ -179,23 +177,4 @@ func nullFloat(n sql.NullFloat64) any {
 		return nil
 	}
 	return n.Float64
-}
-
-// orderBy makes an ORDER BY of standard comparators over the columns that
-// a type sorts by, given by property.  Whatever has no value sorts last,
-// either way up, and objects that are otherwise equal are in order of id.
-func orderBy(columns map[string]string, by []std.Comparator, typ string) (string, error) {
-	var terms []string
-	for _, cmp := range by {
-		column, ok := columns[cmp.Property]
-		if !ok {
-			return "", jmap.Errorf(jmap.ErrUnsupportedSort, "a %s can't be sorted by %s", typ, cmp.Property)
-		}
-		direction := "ASC"
-		if !cmp.Ascending() {
-			direction = "DESC"
-		}
-		terms = append(terms, column+" IS NULL", column+" "+direction)
-	}
-	return strings.Join(append(terms, "id"), ", "), nil
 }

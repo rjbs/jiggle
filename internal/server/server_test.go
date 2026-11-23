@@ -227,8 +227,8 @@ func TestAwkwardPhotoIDs(t *testing.T) {
 	got := f.Request(jmaptest.Do("Photo/get", jmaptest.Args{"ids": ids, "properties": []string{"id"}})).
 		SingleSentence("Photo/get")
 	is(t, "none is missing", got.Strs("notFound"), `[]`)
-	is(t, "a query finds them", f.query("Photo", `{"query": "id:000000123456 id:123e45678901"}`),
-		`["000000123456", "123e45678901"]`)
+	is(t, "a query finds them", f.query("Photo", `{"inAlbum": "digits"}`),
+		`["000000123456", "123456789012", "123e45678901"]`)
 	is(t, "an album lists them", f.get("Album", "digits", "photoIds")["photoIds"],
 		`["000000123456", "123456789012", "123e45678901"]`)
 }
@@ -449,53 +449,74 @@ func queryFixture(t *testing.T) *fixture {
 	return f
 }
 
-func finds(t *testing.T, f *fixture, query string, want ...string) {
+// finds requires that a Photo/query with the filter find the photos, which
+// it gives in the order they were taken.
+func finds(t *testing.T, f *fixture, filter string, want ...string) {
 	t.Helper()
-	filter, _ := json.Marshal(map[string]string{"query": query})
 	if want == nil {
 		want = []string{}
 	}
 	wanted, _ := json.Marshal(want)
-	is(t, query, f.query("Photo", string(filter)), string(wanted))
+	is(t, filter, f.query("Photo", filter), string(wanted))
 }
 
 func TestPhotoQuery(t *testing.T) {
 	f := queryFixture(t)
-	finds(t, f, "", "p2001", "p2002", "p2003", "p2004", "pnone")
-	finds(t, f, "all", "p2001", "p2002", "p2003", "p2004", "pnone")
-	finds(t, f, "public", "p2001", "pnone")
-	finds(t, f, "unlisted", "p2002")
-	finds(t, f, "private", "p2003")
-	finds(t, f, "pending", "p2004")
-	finds(t, f, "album:trip", "p2002", "p2001")
-	finds(t, f, "album:best album:trip", "p2001")
-	finds(t, f, "album:trip public", "p2001")
-	finds(t, f, "tag:vienna", "p2001", "p2002")
-	finds(t, f, "tag:high-st", "p2001", "p2003")
-	finds(t, f, "tag:HIGH_ST", "p2001", "p2003")
-	finds(t, f, "tag:nothing")
-	finds(t, f, "year:2002", "p2002")
-	finds(t, f, "year:1999")
-	finds(t, f, "id:p2003 id:pnone id:nobody", "p2003", "pnone")
-	finds(t, f, "id:p2003 public")
-	finds(t, f, "all limit:2", "p2001", "p2002")
-	finds(t, f, "album:trip limit:1", "p2002")
+	finds(t, f, `null`, "p2001", "p2002", "p2003", "p2004", "pnone")
+	finds(t, f, `{}`, "p2001", "p2002", "p2003", "p2004", "pnone")
+	finds(t, f, `{"visibility": "public"}`, "p2001", "pnone")
+	finds(t, f, `{"visibility": "unlisted"}`, "p2002")
+	finds(t, f, `{"visibility": "private"}`, "p2003")
+	finds(t, f, `{"visibility": "pending"}`, "p2004")
+	finds(t, f, `{"visibility": "secret"}`)
+	finds(t, f, `{"inAlbum": "trip"}`, "p2001", "p2002")
+	finds(t, f, `{"inAlbum": "nowhere"}`)
+	finds(t, f, `{"inAlbum": "trip", "visibility": "public"}`, "p2001")
+	finds(t, f, `{"tag": "vienna"}`, "p2001", "p2002")
+	finds(t, f, `{"tag": "high-st"}`, "p2001", "p2003")
+	finds(t, f, `{"tag": "HIGH_ST"}`, "p2001", "p2003")
+	finds(t, f, `{"tag": "nothing"}`)
+	finds(t, f, `{"takenAfter": "2002", "takenBefore": "2003"}`, "p2002")
+	finds(t, f, `{"takenAfter": "2002-01-01T10:00:00+02:00"}`, "p2002", "p2003", "p2004")
+	finds(t, f, `{"takenBefore": "2002-01-01T10:00:00+02:00"}`, "p2001")
+	finds(t, f, `{"takenBefore": "1999"}`)
 }
 
-func queryFails(t *testing.T, f *fixture, args jmaptest.Args, errorType string) {
+func TestPhotoQueryOperators(t *testing.T) {
+	f := queryFixture(t)
+	finds(t, f, `{"operator": "AND", "conditions": [{"inAlbum": "trip"}, {"inAlbum": "best"}]}`, "p2001")
+	finds(t, f, `{"operator": "OR", "conditions": [{"inAlbum": "trip"}, {"inAlbum": "best"}]}`, "p2001", "p2002", "p2004")
+	finds(t, f, `{"operator": "NOT", "conditions": [{"inAlbum": "trip"}, {"inAlbum": "best"}]}`, "p2003", "pnone")
+	finds(t, f, `{"operator": "AND", "conditions": [
+		{"operator": "OR", "conditions": [{"visibility": "public"}, {"visibility": "unlisted"}]},
+		{"operator": "NOT", "conditions": [{"tag": "high st"}]}
+	]}`, "p2002", "pnone")
+	finds(t, f, `{"operator": "AND", "conditions": []}`, "p2001", "p2002", "p2003", "p2004", "pnone")
+	finds(t, f, `{"operator": "OR", "conditions": []}`)
+	finds(t, f, `{"operator": "NOT", "conditions": []}`, "p2001", "p2002", "p2003", "p2004", "pnone")
+}
+
+func queryFails(t *testing.T, f *fixture, args, errorType string) {
 	t.Helper()
-	f.Request(jmaptest.Do("Photo/query", args)).SingleSentence("error").AssertError(errorType)
+	var decoded jmaptest.Args
+	if err := json.Unmarshal([]byte(args), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	f.Request(jmaptest.Do("Photo/query", decoded)).SingleSentence("error").AssertError(errorType)
 }
 
 func TestPhotoQueryRefused(t *testing.T) {
 	f := queryFixture(t)
-	queryFails(t, f, jmaptest.Args{"filter": map[string]any{"query": "sparkly"}}, "unsupportedFilter")
-	queryFails(t, f, jmaptest.Args{"filter": map[string]any{"query": "year:26"}}, "unsupportedFilter")
-	queryFails(t, f, jmaptest.Args{"filter": map[string]any{"query": "limit:0"}}, "unsupportedFilter")
-	queryFails(t, f, jmaptest.Args{"filter": map[string]any{"query": "limit:1 limit:2"}}, "invalidArguments")
-	queryFails(t, f, jmaptest.Args{"filter": map[string]any{"query": "album:nowhere"}}, "invalidArguments")
-	queryFails(t, f, jmaptest.Args{"filter": map[string]any{"title": "Legs"}}, "unsupportedFilter")
-	queryFails(t, f, jmaptest.Args{"sort": []map[string]any{{"property": "title"}}}, "unsupportedSort")
+	queryFails(t, f, `{"filter": {"title": "Legs"}}`, "unsupportedFilter")
+	queryFails(t, f, `{"filter": {"query": "public"}}`, "unsupportedFilter")
+	queryFails(t, f, `{"filter": {"visibility": 1}}`, "unsupportedFilter")
+	queryFails(t, f, `{"filter": {"operator": "XOR", "conditions": []}}`, "unsupportedFilter")
+	queryFails(t, f, `{"filter": {"operator": "AND", "conditions": [{"sparkle": true}]}}`, "unsupportedFilter")
+	queryFails(t, f, `{"filter": {"operator": "AND", "visibility": "public"}}`, "invalidArguments")
+	queryFails(t, f, `{"filter": "public"}`, "invalidArguments")
+	queryFails(t, f, `{"sort": [{"property": "title"}]}`, "unsupportedSort")
+	queryFails(t, f, `{"sort": [{"property": "position"}]}`, "invalidArguments")
+	queryFails(t, f, `{"sort": [{"property": "taken", "inAlbum": "trip"}]}`, "invalidArguments")
 }
 
 func TestPhotoQuerySort(t *testing.T) {
@@ -505,7 +526,13 @@ func TestPhotoQuerySort(t *testing.T) {
 		`["p2004", "p2003", "p2002", "p2001", "pnone"]`)
 	is(t, "by when added, those never added last", f.query("Photo", `{}`, map[string]any{"property": "added"}),
 		`["pnone", "p2003", "p2002", "p2001", "p2004"]`)
-	is(t, "an album, sorted, is not in album order", f.query("Photo", `{"query": "album:trip"}`, map[string]any{"property": "taken"}),
+	is(t, "an album, in its own order",
+		f.query("Photo", `{"inAlbum": "trip"}`, map[string]any{"property": "position", "inAlbum": "trip"}),
+		`["p2002", "p2001"]`)
+	is(t, "everything, by place in an album, those not in it last, and backward",
+		f.query("Photo", `{}`, map[string]any{"property": "position", "inAlbum": "trip", "isAscending": false}),
+		`["p2001", "p2002", "p2003", "p2004", "pnone"]`)
+	is(t, "an album, by when taken", f.query("Photo", `{"inAlbum": "trip"}`, map[string]any{"property": "taken"}),
 		`["p2001", "p2002"]`)
 
 	var page struct {
@@ -549,7 +576,8 @@ func TestAlbumCreate(t *testing.T) {
 		"photoIds": ["cccccccccccc", "aaaaaaaaaaaa"]
 	}`)
 	is(t, "an album with no photos", f.get("Album", set.CreatedID("bare"), "photoIds")["photoIds"], `[]`)
-	is(t, "the photos of the new album", f.query("Photo", `{"query": "album:vienna-2026"}`),
+	is(t, "the photos of the new album, in its order",
+		f.query("Photo", `{"inAlbum": "`+id+`"}`, map[string]any{"property": "position", "inAlbum": id}),
 		`["cccccccccccc", "aaaaaaaaaaaa"]`)
 }
 

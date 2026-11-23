@@ -295,12 +295,30 @@ func (s *Server) albumSet(c *jmap.Call, raw json.RawMessage) (any, error) {
 	}, req)
 }
 
-// The columns an album can be sorted by, by property.
-var albumSorts = map[string]string{"slug": "slug", "title": "title", "created": "created", "id": "id"}
+// albumCondition makes a condition of an Album FilterCondition, whose
+// properties are slug, the album's slug, and photoId, the id of a photo
+// the album holds.
+func albumCondition(raw json.RawMessage) (*condition, error) {
+	var filter struct {
+		Slug    *string `json:"slug"`
+		PhotoID *string `json:"photoId"`
+	}
+	if err := jmap.DecodeArgs(raw, &filter); err != nil {
+		return nil, jmap.Errorf(jmap.ErrUnsupportedFilter, "%v", err)
+	}
+	var conditions []condition
+	if filter.Slug != nil {
+		conditions = append(conditions, condition{`slug = ?`, []any{*filter.Slug}})
+	}
+	if filter.PhotoID != nil {
+		conditions = append(conditions, condition{
+			`id IN (SELECT album_id FROM album_photo WHERE photo_id = ?)`, []any{*filter.PhotoID}})
+	}
+	return all(conditions), nil
+}
 
-// Album/query takes a filter with two properties, both optional: slug, the
-// album's slug, and photoId, the id of a photo it must hold.  With no sort,
-// albums come in order of slug.
+// Album/query takes the filters of albumCondition, and sorts by slug,
+// title, created or id.  With no sort, albums come in order of slug.
 func (s *Server) albumQuery(c *jmap.Call, raw json.RawMessage) (any, error) {
 	req, err := std.ParseQuery(raw, nil)
 	if err != nil {
@@ -309,23 +327,9 @@ func (s *Server) albumQuery(c *jmap.Call, raw json.RawMessage) (any, error) {
 	return std.Query(c, s.begin, limits, std.Querier[*txn]{
 		Type: store.TypeAlbum,
 		All: func(ctx context.Context, tx *txn, req *std.QueryRequest) ([]string, error) {
-			var filter struct {
-				Slug    *string `json:"slug"`
-				PhotoID *string `json:"photoId"`
-			}
-			if req.Filter != nil {
-				if err := jmap.DecodeArgs(req.Filter, &filter); err != nil {
-					return nil, jmap.Errorf(jmap.ErrUnsupportedFilter, "%v", err)
-				}
-			}
-			var where []string
-			var args []any
-			if filter.Slug != nil {
-				where, args = append(where, `slug = ?`), append(args, *filter.Slug)
-			}
-			if filter.PhotoID != nil {
-				where = append(where, `id IN (SELECT album_id FROM album_photo WHERE photo_id = ?)`)
-				args = append(args, *filter.PhotoID)
+			where, err := compileFilter(req.Filter, albumCondition)
+			if err != nil {
+				return nil, err
 			}
 
 			comparators, err := req.Comparators()
@@ -335,16 +339,20 @@ func (s *Server) albumQuery(c *jmap.Call, raw json.RawMessage) (any, error) {
 			if len(comparators) == 0 {
 				comparators = []std.Comparator{{Property: "slug"}}
 			}
-			order, err := orderBy(albumSorts, comparators, store.TypeAlbum)
-			if err != nil {
-				return nil, err
+			var terms []sortBy
+			var ascending []bool
+			for _, cmp := range comparators {
+				switch cmp.Property {
+				case "slug", "title", "created", "id":
+					terms = append(terms, sortBy{sql: cmp.Property})
+				default:
+					return nil, jmap.Errorf(jmap.ErrUnsupportedSort, "an Album can't be sorted by %q", cmp.Property)
+				}
+				ascending = append(ascending, cmp.Ascending())
 			}
-
-			sql := `SELECT id FROM album`
-			if len(where) > 0 {
-				sql += ` WHERE ` + strings.Join(where, ` AND `)
-			}
-			return idsOf(ctx, tx, sql+` ORDER BY `+order, args...)
+			order := orderBy(terms, ascending)
+			return idsOf(ctx, tx, `SELECT id FROM album WHERE `+where.sql+` ORDER BY `+order.sql,
+				append(where.args, order.args...)...)
 		},
 	}, req)
 }
