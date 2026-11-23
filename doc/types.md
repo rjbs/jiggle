@@ -130,17 +130,6 @@ every rendition has to be made again.  The response to the `/set` says so.
 
 A replaced original is kept, and can still be downloaded.
 
-A
-swap(<<'A', <<'B');
-original, `R` for a rendition.  Both can be downloaded.  Nothing can be
-uploaded yet.
-A
-original, `R` for a rendition.  Both can be downloaded.
-
-An upload is an `O` blob from the moment it arrives, whether or not it
-becomes a photo.  The same file uploaded twice is one blob.  Any file can
-be uploaded; one that isn't a photo or a video is refused when it's
-imported.
 ## Album
 
 An ordered list of photos.
@@ -166,5 +155,9 @@ them.  It sorts by `slug` (which is the default), `title`, `created` or
 ## Blobs
 
 A blobId is a letter and the SHA-256 of the blob's bytes: `O` for an
-original, `R` for a rendition.  Both can be downloaded.  Nothing can be
-uploaded yet.
+original, `R` for a rendition.  Both can be downloaded.
+
+An upload is an `O` blob from the moment it arrives, whether or not it
+becomes a photo.  The same file uploaded twice is one blob.  Any file can
+be uploaded; one that isn't a photo or a video is refused when it's
+imported.
