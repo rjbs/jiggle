@@ -262,7 +262,7 @@ private = true
 		"legs.mov|2026-07-19T17:49:45-04:00|1920|1080|7.165")
 	rowsAre(t, db, `SELECT bytes, ext, path FROM blob WHERE id LIKE 'O%'`,
 		"3|mov|originals/00/000000123456.mov")
-	rowsAre(t, db, `SELECT tag FROM photo_tag ORDER BY position`, "high-st", "café")
+	rowsAre(t, db, `SELECT tag FROM photo_tag ORDER BY tag`, "café", "high-st")
 
 	if report.Photos != 0 || report.Videos != 1 {
 		t.Errorf("report: %+v", report)
@@ -294,8 +294,8 @@ func TestTagsAreLowercaseAndUnique(t *testing.T) {
 	l.photo("bbbbbbbbbbbb", `tags = ["fine", "fine"]`)
 	db, report := l.migrated()
 
-	rowsAre(t, db, `SELECT photo_id, tag FROM photo_tag ORDER BY photo_id, position`,
-		"aaaaaaaaaaaa|vienna", "aaaaaaaaaaaa|church", "aaaaaaaaaaaa|été", "bbbbbbbbbbbb|fine")
+	rowsAre(t, db, `SELECT photo_id, tag FROM photo_tag ORDER BY photo_id, tag`,
+		"aaaaaaaaaaaa|church", "aaaaaaaaaaaa|vienna", "aaaaaaaaaaaa|été", "bbbbbbbbbbbb|fine")
 	warningsAre(t, report, "1 photo(s) had tags with capitals, now lowercase")
 }
 

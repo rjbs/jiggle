@@ -41,7 +41,7 @@ func idSurvives(t *testing.T, id string) {
 	s := newStore(t)
 	insertPhoto(t, s, id)
 
-	if _, err := s.DB.Exec(`INSERT INTO photo_tag (photo_id, position, tag) VALUES (?, 0, 'x')`, id); err != nil {
+	if _, err := s.DB.Exec(`INSERT INTO photo_tag (photo_id, tag) VALUES (?, 'x')`, id); err != nil {
 		t.Fatalf("tagging %s: %v", id, err)
 	}
 
@@ -105,7 +105,7 @@ func TestConstraints(t *testing.T) {
 	refused(t, s, "a latitude with no longitude",
 		`UPDATE photo SET lat = 40.0`)
 	refused(t, s, "a tag on a photo that doesn't exist",
-		`INSERT INTO photo_tag (photo_id, position, tag) VALUES ('bbbbbbbbbbbb', 0, 'x')`)
+		`INSERT INTO photo_tag (photo_id, tag) VALUES ('bbbbbbbbbbbb', 'x')`)
 	refused(t, s, "a blob that doesn't exist",
 		`UPDATE photo SET blob_id = 'nope'`)
 }

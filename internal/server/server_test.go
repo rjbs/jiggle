@@ -94,8 +94,8 @@ func (f *fixture) photo(id, set string, tags ...string) {
 	if set != "" {
 		f.exec(`UPDATE photo SET `+set+` WHERE id = ?`, id)
 	}
-	for i, tag := range tags {
-		f.exec(`INSERT INTO photo_tag (photo_id, position, tag) VALUES (?, ?, ?)`, id, i, tag)
+	for _, tag := range tags {
+		f.exec(`INSERT INTO photo_tag (photo_id, tag) VALUES (?, ?)`, id, tag)
 	}
 	rendition := f.blob("R", "derived/"+id+"/500.webp", "500.webp of "+id)
 	f.exec(`
@@ -362,30 +362,6 @@ func TestPhotoUpdateThatChangesNothing(t *testing.T) {
 	if set.NewState() != before {
 		t.Errorf("the state changed, from %s to %s", before, set.NewState())
 	}
-}
-
-// The site shows a photo's tags in the order they are kept in, which a
-// client can't give: the tags that stay keep their places, and new ones
-// follow, in order of name.
-func TestTagsKeepTheirOrder(t *testing.T) {
-	f := newFixture(t)
-	f.photo("aaaaaaaaaaaa", "", "vienna", "legs", "arms")
-	f.set("Photo", jmaptest.Args{"update": map[string]any{
-		"aaaaaaaaaaaa": map[string]any{"tags/legs": nil, "tags/zebra": true, "tags/bear": true},
-	}}).AssertNoErrors()
-
-	rows, err := f.s.DB.Query(`SELECT tag FROM photo_tag WHERE photo_id = 'aaaaaaaaaaaa' ORDER BY position`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var tags []string
-	for rows.Next() {
-		var tag string
-		rows.Scan(&tag)
-		tags = append(tags, tag)
-	}
-	is(t, "the tags, in order", tags, `["vienna", "arms", "bear", "zebra"]`)
 }
 
 func TestPhotoSetDoesNotCreate(t *testing.T) {

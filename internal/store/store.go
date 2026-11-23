@@ -107,13 +107,12 @@ CREATE TABLE photo (
 ) STRICT;
 CREATE INDEX photo_modseq ON photo (modseq);
 
--- A photo's tags, lowercase, in the order they were given.
+-- A photo's tags, lowercase.  They have no order of their own, and are
+-- shown in order of name.
 CREATE TABLE photo_tag (
-  photo_id TEXT    NOT NULL REFERENCES photo (id) ON DELETE CASCADE,
-  position INTEGER NOT NULL,
-  tag      TEXT    NOT NULL,
-  PRIMARY KEY (photo_id, position),
-  UNIQUE (photo_id, tag)
+  photo_id TEXT NOT NULL REFERENCES photo (id) ON DELETE CASCADE,
+  tag      TEXT NOT NULL,
+  PRIMARY KEY (photo_id, tag)
 ) STRICT;
 CREATE INDEX photo_tag_tag ON photo_tag (tag);
 

@@ -92,8 +92,8 @@ func (f *fixture) photo(id, set string) {
 
 func (f *fixture) tag(id string, tags ...string) {
 	f.t.Helper()
-	for i, tag := range tags {
-		f.exec(`INSERT INTO photo_tag (photo_id, position, tag) VALUES (?, ?, ?)`, id, i, tag)
+	for _, tag := range tags {
+		f.exec(`INSERT INTO photo_tag (photo_id, tag) VALUES (?, ?)`, id, tag)
 	}
 }
 

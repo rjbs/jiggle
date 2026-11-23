@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -302,10 +301,7 @@ func updatePhoto(ctx context.Context, tx *txn, id string, raw json.RawMessage) (
 	return told(asked, now, photoEditable), nil
 }
 
-// writeTags makes a photo's tags what they are now.  The tags it keeps stay
-// in the order they were in, which is the order the site shows them in, and
-// new ones go after them, in order of name: a client can say which tags a
-// photo has, and not what order they come in.
+// writeTags makes a photo's tags what they are now.
 func writeTags(ctx context.Context, tx *txn, id string, old, now map[string]bool) error {
 	for tag := range old {
 		if now[tag] {
@@ -315,18 +311,11 @@ func writeTags(ctx context.Context, tx *txn, id string, old, now map[string]bool
 			return err
 		}
 	}
-	var added []string
 	for tag := range now {
-		if !old[tag] {
-			added = append(added, tag)
+		if old[tag] {
+			continue
 		}
-	}
-	sort.Strings(added)
-	for _, tag := range added {
-		_, err := tx.ExecContext(ctx, `
-			INSERT INTO photo_tag (photo_id, position, tag)
-			SELECT ?1, coalesce(max(position), -1) + 1, ?2 FROM photo_tag WHERE photo_id = ?1`, id, tag)
-		if err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO photo_tag (photo_id, tag) VALUES (?, ?)`, id, tag); err != nil {
 			return err
 		}
 	}

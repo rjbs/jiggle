@@ -150,7 +150,7 @@ func (r *reader) config() map[string]any {
 
 func (r *reader) photos() []map[string]any {
 	tags := map[string][]any{}
-	r.rows(`SELECT photo_id, tag FROM photo_tag ORDER BY photo_id, position`, func(scan func(...any)) {
+	r.rows(`SELECT photo_id, tag FROM photo_tag ORDER BY photo_id, tag`, func(scan func(...any)) {
 		var id, tag string
 		scan(&id, &tag)
 		tags[id] = append(tags[id], tag)

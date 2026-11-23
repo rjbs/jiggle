@@ -218,8 +218,8 @@ func (w *writer) photo(p *photoFile) error {
 		return err
 	}
 
-	for i, tag := range p.Tags {
-		err := w.exec(`INSERT INTO photo_tag (photo_id, position, tag) VALUES (?, ?, ?)`, p.ID, i, tag)
+	for _, tag := range p.Tags {
+		err := w.exec(`INSERT INTO photo_tag (photo_id, tag) VALUES (?, ?)`, p.ID, tag)
 		if err != nil {
 			return fmt.Errorf("tag %q: %w", tag, err)
 		}

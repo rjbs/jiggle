@@ -22,7 +22,7 @@ A photo or a video.
 | `taken` | String or null | The time on the clock when the photo was taken, like `2026-07-17T17:23:17`, with a UTC offset (or `Z`) only if one is known. |
 | `visibility` | String | `public`, `unlisted`, `private` or `pending`. |
 | `rotate` | Number | A further turn clockwise, in degrees: 0, 90, 180 or 270. |
-| `tags` | String[Boolean] | A set: each tag the photo has, with the value true.  So `tags/cat` can be patched to true, to add a tag, or to null, to remove one.  The server keeps tags in lowercase.  The site shows them in the order they were added, which a client can't set. |
+| `tags` | String[Boolean] | A set: each tag the photo has, with the value true.  So `tags/cat` can be patched to true, to add a tag, or to null, to remove one.  The server keeps tags in lowercase.  They have no order, and the site shows them in order of name. |
 | `location` | Object or null | `lat`, `lon`, and `isPrivate`, which is false unless given. |
 | `added` | String or null | When the photo was added to the library.  Set by the server. |
 | `flickrId`, `flickrUploaded` | String or null | For a photo that came from Flickr.  Set by the server. |

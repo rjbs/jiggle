@@ -209,7 +209,7 @@ func (l *loader) config() Config {
 
 func (l *loader) photos() []*Photo {
 	tags := map[string][]string{}
-	l.rows(`SELECT photo_id, tag FROM photo_tag ORDER BY photo_id, position`, func(scan func(...any)) {
+	l.rows(`SELECT photo_id, tag FROM photo_tag ORDER BY photo_id, tag`, func(scan func(...any)) {
 		var id, tag string
 		scan(&id, &tag)
 		tags[id] = append(tags[id], tag)

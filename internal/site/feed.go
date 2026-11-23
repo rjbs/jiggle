@@ -277,6 +277,7 @@ func (s *Site) FeedXML() ([]byte, error) {
 					}
 				}
 			}
+			sort.Strings(tags)
 
 			// Many days share a month page, so the entry's id can't be
 			// its URL.  A tag URI names the day itself, so it stays the
