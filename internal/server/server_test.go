@@ -194,7 +194,7 @@ func TestPhotoGet(t *testing.T) {
 	is(t, "a photo with everything", f.get("Photo", "aaaaaaaaaaaa"), `{
 		"id": "aaaaaaaaaaaa", "type": "photo", "title": "Legs", "description": "Two of them.",
 		"taken": "2026-07-17T17:23:17+02:00", "visibility": "public", "rotate": 90,
-		"tags": ["vienna", "legs"], "location": {"lat": 48.25, "lon": 16.5, "isPrivate": true},
+		"tags": {"vienna": true, "legs": true}, "location": {"lat": 48.25, "lon": 16.5, "isPrivate": true},
 		"added": "2026-07-20T09:00:00+02:00", "flickrId": "123", "flickrUploaded": "2010-01-02T03:04:05Z",
 		"blobId": "`+original+`",
 		"original": {"name": "IMG_aaaaaaaaaaaa.jpg", "modified": "2026-07-17T15:23:20Z", "size": 24,
@@ -205,7 +205,7 @@ func TestPhotoGet(t *testing.T) {
 	is(t, "a video with next to nothing, and only some of it",
 		f.get("Photo", "bbbbbbbbbbbb", "type", "title", "taken", "visibility", "tags", "location", "added", "original"), `{
 		"id": "bbbbbbbbbbbb", "type": "video", "title": "", "taken": null, "visibility": "pending",
-		"tags": [], "location": null, "added": null,
+		"tags": {}, "location": null, "added": null,
 		"original": {"name": "IMG_bbbbbbbbbbbb.jpg", "modified": null, "size": 24,
 		             "width": 4000, "height": 3000, "duration": 102.5}
 	}`)
@@ -272,9 +272,12 @@ func TestPhotoUpdate(t *testing.T) {
 	photoBecomes(t, "a date in UTC, to a fraction", `{"taken": "2026-01-02T03:04:05.25Z"}`, `{"taken": "2026-01-02T03:04:05.25Z"}`)
 	photoBecomes(t, "no date", `{"taken": null}`, `{"taken": null}`)
 	photoBecomes(t, "visibility and rotation", `{"visibility": "unlisted", "rotate": 270}`, `{"visibility": "unlisted", "rotate": 270}`)
-	photoBecomes(t, "tags, which are kept in lowercase, once each",
-		`{"tags": ["Legs", "rock & roll", "LEGS"]}`, `{"tags": ["legs", "rock & roll"]}`)
-	photoBecomes(t, "no tags", `{"tags": []}`, `{"tags": []}`)
+	photoBecomes(t, "tags, which are kept in lowercase",
+		`{"tags": {"Legs": true, "rock & roll": true, "LEGS": true}}`, `{"tags": {"legs": true, "rock & roll": true}}`)
+	photoBecomes(t, "no tags", `{"tags": {}}`, `{"tags": {}}`)
+	photoBecomes(t, "one more tag", `{"tags/pet": true}`, `{"tags": {"vienna": true, "legs": true, "pet": true}}`)
+	photoBecomes(t, "one tag fewer", `{"tags/vienna": null}`, `{"tags": {"legs": true}}`)
+	photoBecomes(t, "one tag for another", `{"tags/vienna": null, "tags/Wien": true}`, `{"tags": {"legs": true, "wien": true}}`)
 	photoBecomes(t, "a location", `{"location": {"lat": -33.5, "lon": 151, "isPrivate": true}}`,
 		`{"location": {"lat": -33.5, "lon": 151, "isPrivate": true}}`)
 	photoBecomes(t, "a location, public unless it says otherwise", `{"location": {"lat": 0, "lon": 0}}`,
@@ -321,8 +324,11 @@ func TestPhotoUpdateRefused(t *testing.T) {
 	photoRefuses(t, `{"rotate": 45}`, "rotate")
 	photoRefuses(t, `{"rotate": "90"}`, "rotate")
 	photoRefuses(t, `{"tags": "vienna"}`, "tags")
-	photoRefuses(t, `{"tags": ["vienna", ""]}`, "tags")
-	photoRefuses(t, `{"tags": [" vienna"]}`, "tags")
+	photoRefuses(t, `{"tags": ["vienna"]}`, "tags")
+	photoRefuses(t, `{"tags": {"vienna": true, "": true}}`, "tags")
+	photoRefuses(t, `{"tags": {" vienna": true}}`, "tags")
+	photoRefuses(t, `{"tags/vienna": false}`, "tags")
+	photoRefuses(t, `{"tags/legs": 1}`, "tags")
 	photoRefuses(t, `{"location": {"lat": 91, "lon": 0}}`, "location")
 	photoRefuses(t, `{"location": {"lat": 1}}`, "location")
 	photoRefuses(t, `{"location": {"lat": 1, "lon": 2, "name": "home"}}`, "location")
@@ -337,13 +343,13 @@ func TestPhotoSetTellsWhatItChanged(t *testing.T) {
 	f := newFixture(t)
 	f.photo("aaaaaaaaaaaa", "")
 	set := f.set("Photo", jmaptest.Args{"update": map[string]any{
-		"aaaaaaaaaaaa": map[string]any{"title": "Legs", "tags": []string{"Vienna"}},
+		"aaaaaaaaaaaa": map[string]any{"title": "Legs", "tags": map[string]bool{"Vienna": true}},
 	}}).AssertNoErrors()
 	var got struct {
 		Updated map[string]any `json:"updated"`
 	}
 	set.Decode(&got)
-	is(t, "what the client is told", got.Updated, `{"aaaaaaaaaaaa": {"tags": ["vienna"]}}`)
+	is(t, "what the client is told", got.Updated, `{"aaaaaaaaaaaa": {"tags": {"vienna": true}}}`)
 }
 
 func TestPhotoUpdateThatChangesNothing(t *testing.T) {
@@ -351,11 +357,35 @@ func TestPhotoUpdateThatChangesNothing(t *testing.T) {
 	f.photo("aaaaaaaaaaaa", `title = 'Legs'`, "vienna")
 	before := f.state("Photo")
 	set := f.set("Photo", jmaptest.Args{"update": map[string]any{
-		"aaaaaaaaaaaa": map[string]any{"title": "Legs", "tags": []string{"vienna"}},
+		"aaaaaaaaaaaa": map[string]any{"title": "Legs", "tags": map[string]bool{"vienna": true}},
 	}}).AssertNoErrors()
 	if set.NewState() != before {
 		t.Errorf("the state changed, from %s to %s", before, set.NewState())
 	}
+}
+
+// The site shows a photo's tags in the order they are kept in, which a
+// client can't give: the tags that stay keep their places, and new ones
+// follow, in order of name.
+func TestTagsKeepTheirOrder(t *testing.T) {
+	f := newFixture(t)
+	f.photo("aaaaaaaaaaaa", "", "vienna", "legs", "arms")
+	f.set("Photo", jmaptest.Args{"update": map[string]any{
+		"aaaaaaaaaaaa": map[string]any{"tags/legs": nil, "tags/zebra": true, "tags/bear": true},
+	}}).AssertNoErrors()
+
+	rows, err := f.s.DB.Query(`SELECT tag FROM photo_tag WHERE photo_id = 'aaaaaaaaaaaa' ORDER BY position`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var tags []string
+	for rows.Next() {
+		var tag string
+		rows.Scan(&tag)
+		tags = append(tags, tag)
+	}
+	is(t, "the tags, in order", tags, `["vienna", "arms", "bear", "zebra"]`)
 }
 
 func TestPhotoSetDoesNotCreate(t *testing.T) {

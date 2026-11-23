@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -75,7 +76,7 @@ func loadPhotos(ctx context.Context, tx *txn, ids []string) (map[string]object, 
 		p := object{
 			"id": id, "type": typ, "title": title, "description": description,
 			"taken": nullText(taken), "visibility": visibility, "rotate": rotate,
-			"tags": []string{}, "location": nil,
+			"tags": map[string]bool{}, "location": nil,
 			"added": nullText(added), "flickrId": nullText(flickrID), "flickrUploaded": nullText(flickrUploaded),
 			"blobId": nullText(blobID), "original": nil, "renditions": map[string]object{},
 		}
@@ -96,7 +97,7 @@ func loadPhotos(ctx context.Context, tx *txn, ids []string) (map[string]object, 
 	}
 
 	cond, args = where("photo_id")
-	tags, err := tx.QueryContext(ctx, `SELECT photo_id, tag FROM photo_tag`+cond+` ORDER BY photo_id, position`, args...)
+	tags, err := tx.QueryContext(ctx, `SELECT photo_id, tag FROM photo_tag`+cond, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -106,7 +107,7 @@ func loadPhotos(ctx context.Context, tx *txn, ids []string) (map[string]object, 
 		if err := tags.Scan(&id, &tag); err != nil {
 			return nil, nil, err
 		}
-		photos[id]["tags"] = append(photos[id]["tags"].([]string), tag)
+		photos[id]["tags"].(map[string]bool)[tag] = true
 	}
 	if err := tags.Err(); err != nil {
 		return nil, nil, err
@@ -174,7 +175,7 @@ func validTaken(s string) bool {
 
 // checkPhoto checks a photo as a client would have it be, against the photo
 // as it is, and returns it as it will be: the client's, with its tags in
-// lowercase and each given once, as tags are kept.
+// lowercase, as tags are kept.
 func checkPhoto(old, asked object) (object, error) {
 	c := check(asked)
 	c.only(photoProps)
@@ -214,21 +215,18 @@ func checkPhoto(old, asked object) (object, error) {
 		c.fail("rotate")
 	}
 
-	tags, seen := []string{}, map[string]bool{}
-	given, ok := asked["tags"].([]any)
+	// The tags are a set: an object whose every value is true.
+	tags := map[string]bool{}
+	given, ok := asked["tags"].(map[string]any)
 	if !ok {
 		c.fail("tags")
 	}
-	for _, v := range given {
-		tag, ok := v.(string)
-		if !ok || strings.TrimSpace(tag) == "" || tag != strings.TrimSpace(tag) {
+	for tag, value := range given {
+		if value != true || strings.TrimSpace(tag) == "" || tag != strings.TrimSpace(tag) {
 			c.fail("tags")
 			continue
 		}
-		if tag = strings.ToLower(tag); !seen[tag] {
-			seen[tag] = true
-			tags = append(tags, tag)
-		}
+		tags[strings.ToLower(tag)] = true
 	}
 	now["tags"] = tags
 
@@ -294,22 +292,45 @@ func updatePhoto(ctx context.Context, tx *txn, id string, raw json.RawMessage) (
 		return nil, err
 	}
 
-	if !same(old["tags"], now["tags"]) {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM photo_tag WHERE photo_id = ?`, id); err != nil {
-			return nil, err
-		}
-		for i, tag := range now["tags"].([]string) {
-			_, err := tx.ExecContext(ctx, `INSERT INTO photo_tag (photo_id, position, tag) VALUES (?, ?, ?)`, id, i, tag)
-			if err != nil {
-				return nil, err
-			}
-		}
+	if err := writeTags(ctx, tx, id, old["tags"].(map[string]bool), now["tags"].(map[string]bool)); err != nil {
+		return nil, err
 	}
 
 	if _, err := tx.Touch(ctx, store.TypePhoto, id); err != nil {
 		return nil, err
 	}
 	return told(asked, now, photoEditable), nil
+}
+
+// writeTags makes a photo's tags what they are now.  The tags it keeps stay
+// in the order they were in, which is the order the site shows them in, and
+// new ones go after them, in order of name: a client can say which tags a
+// photo has, and not what order they come in.
+func writeTags(ctx context.Context, tx *txn, id string, old, now map[string]bool) error {
+	for tag := range old {
+		if now[tag] {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM photo_tag WHERE photo_id = ? AND tag = ?`, id, tag); err != nil {
+			return err
+		}
+	}
+	var added []string
+	for tag := range now {
+		if !old[tag] {
+			added = append(added, tag)
+		}
+	}
+	sort.Strings(added)
+	for _, tag := range added {
+		_, err := tx.ExecContext(ctx, `
+			INSERT INTO photo_tag (photo_id, position, tag)
+			SELECT ?1, coalesce(max(position), -1) + 1, ?2 FROM photo_tag WHERE photo_id = ?1`, id, tag)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // destroyPhoto removes a photo, and takes it out of every album it is in.
