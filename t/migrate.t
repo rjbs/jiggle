@@ -7,67 +7,27 @@ use lib 'lib', 't/lib';
 
 use App::Cmd::Tester;
 use Jiggle::App;
-use Jiggle::TestLibrary;
+use Jiggle::TestGo;
 use Path::Tiny ();
 
 # This tests the migration to the Go server's database, by the check that
 # will be run on the real library: migrate a library, and compare the
 # database with what Perl jiggle loads.  So it needs Go.
 
-plan skip_all => 'go is not installed' unless grep {; -x "$_/go" } split /:/, $ENV{PATH};
-
-my $TMP = Path::Tiny->tempdir;
-my $GO  = $TMP->child('jiggle-go');
-
-system('go', 'build', '-o', "$GO", './cmd/jiggle-go') == 0
-  or BAIL_OUT("can't build jiggle-go");
-
-my $N = 0;
-
-# Run jiggle-go, returning its exit status and everything it printed.
-sub jiggle_go (@args) {
-  my $out = $TMP->child('out-' . $N++);
-  my $status = system("$GO @args > $out 2>&1");
-  return ($status >> 8, $out->slurp_utf8);
-}
-
-# Make a library, with a one-byte original for each photo, since migrate
-# insists on originals, and with a digest of its own for each, since no two
-# photos can have one original.  Returns the library's root.
-sub library_to_migrate (%arg) {
-  $arg{photos} = [
-    map {;
-      +{
-        original => {
-          file => "$_->{id}.jpg", ext => 'jpg', bytes => 1, width => 4000, height => 3000,
-          sha256 => $_->{id} . '0' x (64 - length $_->{id}),
-        },
-        %$_,
-      }
-    } $arg{photos}->@*
-  ];
-
-  my ($library, $root) = library_with(%arg);
-  for my $photo ($library->photos) {
-    my $file = $library->original_path($photo);
-    $file->parent->mkpath;
-    $file->spew_raw('x');
-  }
-  return $root;
-}
+go_or_skip();
 
 # Migrate the library at $root, and check the database against what
 # "jiggle dump" prints of it once $change, if there is one, has been made
 # to the library.  Returns check's exit status and output.
 sub migrate_and_check ($root, $change = undef) {
-  my $db = $TMP->child('db-' . $N++ . '.sqlite');
+  my $db = scratch_file('db', 'sqlite');
 
   my ($status, $out) = jiggle_go(migrate => '--library', $root, '--out', $db);
   is($status, 0, 'migrate worked') or diag $out;
 
   $change->($root) if $change;
 
-  my $dump = $TMP->child('dump-' . $N++ . '.json');
+  my $dump = scratch_file('dump', 'json');
   my $result = test_app('Jiggle::App', [ '-L', "$root", 'dump' ]);
   is($result->error, undef, 'dump worked');
   $dump->spew_raw($result->stdout);
