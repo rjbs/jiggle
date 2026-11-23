@@ -2,7 +2,10 @@ module github.com/rjbs/jiggle
 
 go 1.26.0
 
-require github.com/rjbs/gizmo v0.1.0
+require (
+	github.com/BurntSushi/toml v1.6.0
+	github.com/rjbs/gizmo v0.1.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect
