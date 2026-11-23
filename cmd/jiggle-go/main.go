@@ -8,6 +8,7 @@
 //	jiggle-go serve --db FILE --library DIR [--listen ADDR] [--tailnet NAME ...]
 //	jiggle-go backup --db FILE --to DIR [--keep N]
 //	jiggle-go sync --db FILE --site DIR [--to rsync|bunny] [--dry-run] [--purge-all]
+//	jiggle-go ingest [--url URL] [--no-wait] [--discard-failed] FILE-OR-DIR...
 package main
 
 import (
@@ -36,6 +37,8 @@ func main() {
 		err = runSync(ctx, os.Args[2:])
 	case "backup":
 		err = runBackup(ctx, os.Args[2:])
+	case "ingest":
+		err = runIngest(ctx, os.Args[2:])
 	case "serve":
 		err = runServe(ctx, os.Args[2:])
 	default:
@@ -48,7 +51,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: jiggle-go migrate|check|build|sitediff|serve|backup|sync [options]; jiggle-go COMMAND -h for options")
+	fmt.Fprintln(os.Stderr, "usage: jiggle-go migrate|check|build|sitediff|serve|backup|sync|ingest [options]; jiggle-go COMMAND -h for options")
 	os.Exit(2)
 }
 
