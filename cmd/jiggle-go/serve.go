@@ -54,6 +54,7 @@ func runServe(ctx context.Context, args []string) error {
 		return err
 	}
 	go srv.Watch(ctx)
+	go srv.Work(ctx)
 	handler := srv.Handler()
 
 	// Each listener runs until it fails, and the first failure ends the

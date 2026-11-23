@@ -17,7 +17,7 @@ import (
 // A Photo's properties.  The first lot are a person's to set; the rest are
 // set only by the server.  See doc/types.md.
 var (
-	photoEditable = []string{"title", "description", "taken", "visibility", "rotate", "tags", "location"}
+	photoEditable = []string{"title", "description", "taken", "visibility", "rotate", "tags", "location", "importJob"}
 	photoFixed    = []string{"id", "type", "added", "flickrId", "flickrUploaded", "blobId", "original", "renditions"}
 	photoProps    = append(append([]string{}, photoFixed...), photoEditable...)
 )
@@ -50,7 +50,8 @@ func loadPhotos(ctx context.Context, tx *txn, ids []string) (map[string]object, 
 	rows, err := tx.QueryContext(ctx, `
 		SELECT p.id, p.type, p.title, p.description, p.taken, p.visibility, p.rotate, p.added,
 		       p.flickr_id, p.flickr_uploaded, p.lat, p.lon, p.location_private,
-		       p.blob_id, p.original_name, p.original_mtime, p.width, p.height, p.duration, b.bytes
+		       p.blob_id, p.original_name, p.original_mtime, p.width, p.height, p.duration, b.bytes,
+		       p.import_blob_id, p.import_error, p.import_name, p.import_mtime
 		FROM photo p LEFT JOIN blob b ON b.id = p.blob_id`+cond+` ORDER BY p.id`, args...)
 	if err != nil {
 		return nil, nil, err
@@ -63,12 +64,14 @@ func loadPhotos(ctx context.Context, tx *txn, ids []string) (map[string]object, 
 			private                                              bool
 			taken, added, flickrID, flickrUploaded, blobID, name sql.NullString
 			mtime                                                sql.NullString
+			importing, importError, importName, importMtime      sql.NullString
 			lat, lon, duration                                   sql.NullFloat64
 			width, height, bytes                                 sql.NullInt64
 		)
 		err := rows.Scan(&id, &typ, &title, &description, &taken, &visibility, &rotate, &added,
 			&flickrID, &flickrUploaded, &lat, &lon, &private,
-			&blobID, &name, &mtime, &width, &height, &duration, &bytes)
+			&blobID, &name, &mtime, &width, &height, &duration, &bytes,
+			&importing, &importError, &importName, &importMtime)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -78,6 +81,13 @@ func loadPhotos(ctx context.Context, tx *txn, ids []string) (map[string]object, 
 			"tags": map[string]bool{}, "location": nil,
 			"added": nullText(added), "flickrId": nullText(flickrID), "flickrUploaded": nullText(flickrUploaded),
 			"blobId": nullText(blobID), "original": nil, "renditions": map[string]object{},
+			"importJob": nil,
+		}
+		if importing.Valid {
+			p["importJob"] = object{
+				"blobId": importing.String, "error": nullText(importError),
+				"name": nullText(importName), "modified": nullText(importMtime),
+			}
 		}
 		if lat.Valid {
 			p["location"] = object{"lat": lat.Float64, "lon": lon.Float64, "isPrivate": private}
@@ -252,6 +262,42 @@ func checkPhoto(old, asked object) (object, error) {
 		c.fail("location")
 	}
 
+	// An import is checked here only for its shape.  What it may be
+	// depends on what the photo is and what other photos there are.
+	switch job := asked["importJob"].(type) {
+	case nil:
+		now["importJob"] = nil
+	case map[string]any:
+		for name := range job {
+			if name != "blobId" && name != "error" && name != "name" && name != "modified" {
+				c.fail("importJob")
+			}
+		}
+		blobID, ok := job["blobId"].(string)
+		if !ok {
+			c.fail("importJob")
+		}
+		text := func(name string) any {
+			switch v := job[name].(type) {
+			case nil:
+			case string:
+				return v
+			default:
+				c.fail("importJob")
+			}
+			return nil
+		}
+		modified := text("modified")
+		if when, ok := modified.(string); ok {
+			if _, err := time.Parse(time.RFC3339, when); err != nil {
+				c.fail("importJob")
+			}
+		}
+		now["importJob"] = object{"blobId": blobID, "error": text("error"), "name": text("name"), "modified": modified}
+	default:
+		c.fail("importJob")
+	}
+
 	return now, c.err()
 }
 
@@ -273,6 +319,9 @@ func updatePhoto(ctx context.Context, tx *txn, id string, raw json.RawMessage) (
 	if err != nil {
 		return nil, err
 	}
+	if err := checkImport(ctx, tx, id, old, now); err != nil {
+		return nil, err
+	}
 	if same(old, now) {
 		return told(asked, now, photoEditable), nil
 	}
@@ -282,13 +331,23 @@ func updatePhoto(ctx context.Context, tx *txn, id string, raw json.RawMessage) (
 	if location, ok := now["location"].(object); ok {
 		lat, lon, private = location["lat"], location["lon"], location["isPrivate"].(bool)
 	}
+	job, _ := now["importJob"].(object)
 	_, err = tx.ExecContext(ctx, `
 		UPDATE photo
-		SET title = ?, description = ?, taken = ?, visibility = ?, rotate = ?, lat = ?, lon = ?, location_private = ?
+		SET title = ?, description = ?, taken = ?, visibility = ?, rotate = ?, lat = ?, lon = ?, location_private = ?,
+		    import_blob_id = ?, import_error = ?, import_name = ?, import_mtime = ?
 		WHERE id = ?`,
-		now["title"], now["description"], now["taken"], now["visibility"], now["rotate"], lat, lon, private, id)
+		now["title"], now["description"], now["taken"], now["visibility"], now["rotate"], lat, lon, private,
+		job["blobId"], job["error"], job["name"], job["modified"], id)
 	if err != nil {
 		return nil, err
+	}
+
+	// A new import, or none, has no use for what the last one made.
+	if !same(old["importJob"], now["importJob"]) {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM import_rendition WHERE photo_id = ?`, id); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := writeTags(ctx, tx, id, old["tags"].(map[string]bool), now["tags"].(map[string]bool)); err != nil {
@@ -372,12 +431,15 @@ func destroyPhoto(ctx context.Context, tx *txn, id string) error {
 }
 
 // Photo/set updates and destroys photos.  It doesn't create them: a photo
-// is made from a file, by an import.
+// is made from a file, by Photo/import.
 func (s *Server) photoSet(c *jmap.Call, raw json.RawMessage) (any, error) {
 	req, err := std.ParseSet(raw, nil)
 	if err != nil {
 		return nil, err
 	}
+	// Whatever imports this starts are there to be worked on once it has
+	// been committed, which is before the deferred call.
+	defer s.kick()
 	return std.Set(c, s.begin, limits, std.Setter[*txn]{
 		Type:    store.TypePhoto,
 		Update:  updatePhoto,

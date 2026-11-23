@@ -95,6 +95,9 @@ func all(conditions []condition) *condition {
 //	             by slug, so that "High St" finds photos tagged "high-st"
 //	takenBefore  the photo was taken before this time
 //	takenAfter   the photo was taken at this time or after it
+//	hasBlobId    whether the photo has an original, and so renditions
+//	isImporting  whether an import of the photo is under way
+//	hasImportError  whether the photo's last import failed
 //
 // Times are compared as text, and may be cut short: a photo is taken after
 // "2026" and before "2027" if it was taken in 2026.  A photo with no date
@@ -106,6 +109,10 @@ func photoCondition(ctx context.Context, tx *txn, raw json.RawMessage) (*conditi
 		Tag         *string `json:"tag"`
 		TakenBefore *string `json:"takenBefore"`
 		TakenAfter  *string `json:"takenAfter"`
+
+		HasBlobID      *bool `json:"hasBlobId"`
+		IsImporting    *bool `json:"isImporting"`
+		HasImportError *bool `json:"hasImportError"`
 	}
 	if err := jmap.DecodeArgs(raw, &filter); err != nil {
 		return nil, jmap.Errorf(jmap.ErrUnsupportedFilter, "%v", err)
@@ -132,6 +139,22 @@ func photoCondition(ctx context.Context, tx *txn, raw json.RawMessage) (*conditi
 	}
 	if filter.TakenAfter != nil {
 		conditions = append(conditions, condition{`taken >= ?`, []any{*filter.TakenAfter}})
+	}
+	for _, flag := range []struct {
+		want *bool
+		sql  string
+	}{
+		{filter.HasBlobID, `blob_id IS NOT NULL`},
+		{filter.IsImporting, `(import_blob_id IS NOT NULL AND import_error IS NULL)`},
+		{filter.HasImportError, `import_error IS NOT NULL`},
+	} {
+		switch {
+		case flag.want == nil:
+		case *flag.want:
+			conditions = append(conditions, condition{sql: flag.sql})
+		default:
+			conditions = append(conditions, condition{sql: `NOT ` + flag.sql})
+		}
 	}
 	return all(conditions), nil
 }

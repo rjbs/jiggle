@@ -27,6 +27,7 @@ type fixture struct {
 	t   *testing.T
 	dir string
 	s   *store.Store
+	srv *Server
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -51,7 +52,7 @@ func newFixture(t *testing.T) *fixture {
 
 	tester := jmaptest.New(t, web.URL, jmap.CoreCapability, Capability)
 	tester.AccountID = "photos"
-	return &fixture{Tester: tester, t: t, dir: dir, s: s}
+	return &fixture{Tester: tester, t: t, dir: dir, s: s, srv: srv}
 }
 
 func (f *fixture) exec(query string, args ...any) {
@@ -199,7 +200,8 @@ func TestPhotoGet(t *testing.T) {
 		"blobId": "`+original+`",
 		"original": {"name": "IMG_aaaaaaaaaaaa.jpg", "modified": "2026-07-17T15:23:20Z", "size": 24,
 		             "width": 4000, "height": 3000, "duration": null},
-		"renditions": {"500.webp": {"blobId": "`+rendition+`", "width": 500, "height": 375, "size": 24}}
+		"renditions": {"500.webp": {"blobId": "`+rendition+`", "width": 500, "height": 375, "size": 24}},
+		"importJob": null
 	}`)
 
 	is(t, "a video with next to nothing, and only some of it",

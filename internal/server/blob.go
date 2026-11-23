@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/rjbs/gizmo/blob"
+
+	"github.com/rjbs/jiggle/internal/derive"
+	"github.com/rjbs/jiggle/internal/store"
 )
 
 // contentTypes are the content types of blobs, by the extension the blob
@@ -50,8 +52,67 @@ func (s *Server) Get(ctx context.Context, _, blobID string) (*blob.Blob, error) 
 	return &blob.Blob{Content: f, Type: contentType, ModTime: info.ModTime()}, nil
 }
 
-// Put is the other half, and refuses everything: nothing can be made of an
-// upload until there is Photo/import.
-func (s *Server) Put(context.Context, *blob.Upload) (*blob.Uploaded, error) {
-	return nil, &blob.Refusal{Status: http.StatusNotImplemented, Detail: "this server doesn't take uploads yet"}
+// Put keeps an upload, as a blob that Photo/import can make a photo of.
+// It is the other half of what makes the server a blob.Store.
+//
+// The blob's id is O and the SHA-256 of its bytes, so the same file
+// uploaded twice is one blob.  What kind of file it is is judged here, by
+// its content, and recorded as its extension; a file that isn't a photo or
+// a video of a kind there are recipes for is kept too, with no extension,
+// and is refused when it's imported.
+func (s *Server) Put(ctx context.Context, up *blob.Upload) (*blob.Uploaded, error) {
+	incoming := filepath.Join(s.cfg.Library, "originals", "incoming")
+	if err := os.MkdirAll(incoming, 0o755); err != nil {
+		return nil, err
+	}
+	got, err := blob.Receive(incoming, up.Body)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(got.Path)
+
+	id := store.OriginalBlobID(got.SHA256)
+	uploaded := func(ext string) *blob.Uploaded {
+		contentType := contentTypes[ext]
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		return &blob.Uploaded{BlobID: id, Type: contentType, Size: got.Size}
+	}
+
+	var ext string
+	err = s.store.DB.QueryRowContext(ctx, `SELECT ext FROM blob WHERE id = ?`, id).Scan(&ext)
+	if err == nil {
+		return uploaded(ext), nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+
+	// A file exiftool can make nothing of is just not a photo.
+	if facts, err := derive.ReadFacts(ctx, got.Path); err == nil && facts.Supported {
+		ext = facts.Media.Ext
+	}
+	path := "originals/" + got.SHA256[:2] + "/" + got.SHA256
+	if ext != "" {
+		path += "." + ext
+	}
+	full := filepath.Join(s.cfg.Library, filepath.FromSlash(path))
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(got.Path, 0o444); err != nil {
+		return nil, err
+	}
+	if err := os.Rename(got.Path, full); err != nil {
+		return nil, err
+	}
+	// Two uploads of the same file at once both get here, with the same
+	// file to show for it, and the second has no row to add.
+	_, err = s.store.DB.ExecContext(ctx,
+		`INSERT INTO blob (id, bytes, ext, path) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`, id, got.Size, ext, path)
+	if err != nil {
+		return nil, err
+	}
+	return uploaded(ext), nil
 }

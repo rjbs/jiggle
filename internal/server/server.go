@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/rjbs/gizmo/auth"
@@ -44,6 +45,17 @@ type Config struct {
 	// another process, to tell the event source of.  Five seconds if zero.
 	PushPollInterval time.Duration
 
+	// MaxSizeUpload is the largest upload taken, in bytes: 16 GiB if
+	// zero.
+	MaxSizeUpload int64
+
+	// ImageWorkers is how many imports have their images made at once:
+	// half the processors if zero.  VideoWorkers is how many videos are
+	// encoded at once, one if zero; an encode uses every processor it
+	// can.
+	ImageWorkers int
+	VideoWorkers int
+
 	// Now is the clock, time.Now if nil.
 	Now func() time.Time
 
@@ -56,6 +68,9 @@ type Server struct {
 	store  *store.Store
 	dir    *auth.Directory
 	broker *push.Broker
+
+	// wake is sent to when there may be imports to work on.
+	wake chan struct{}
 }
 
 // The most a request may ask for at once.  A library is some tens of
@@ -72,6 +87,15 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.PushPollInterval == 0 {
 		cfg.PushPollInterval = 5 * time.Second
+	}
+	if cfg.MaxSizeUpload == 0 {
+		cfg.MaxSizeUpload = 16 << 30
+	}
+	if cfg.ImageWorkers == 0 {
+		cfg.ImageWorkers = max(1, runtime.NumCPU()/2)
+	}
+	if cfg.VideoWorkers == 0 {
+		cfg.VideoWorkers = 1
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -91,7 +115,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 
-	s := &Server{cfg: cfg, store: cfg.Store, dir: dir, broker: push.NewBroker()}
+	s := &Server{cfg: cfg, store: cfg.Store, dir: dir, broker: push.NewBroker(), wake: make(chan struct{}, 1)}
 
 	// The broker is told the states as they stand, so that the first
 	// change published is taken for the one change it is, and not for a
@@ -132,6 +156,7 @@ func (s *Server) Handler() http.Handler {
 		"Photo/changes": (*Server).photoChanges,
 		"Photo/set":     (*Server).photoSet,
 		"Photo/query":   (*Server).photoQuery,
+		"Photo/import":  (*Server).photoImport,
 		"Album/get":     (*Server).albumGet,
 		"Album/changes": (*Server).albumChanges,
 		"Album/set":     (*Server).albumSet,
@@ -154,6 +179,7 @@ func (s *Server) Handler() http.Handler {
 		Limits: jmap.Limits{
 			MaxObjectsInGet: limits.MaxObjectsInGet,
 			MaxObjectsInSet: limits.MaxObjectsInSet,
+			MaxSizeUpload:   s.cfg.MaxSizeUpload,
 		},
 		Capabilities: map[string]any{Capability: map[string]any{}},
 		Blobs:        s,
