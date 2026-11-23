@@ -4,6 +4,7 @@
 //	jiggle-go migrate --library DIR --out FILE
 //	jiggle-go check --db FILE [--dump FILE]
 //	jiggle-go build --db FILE --library DIR --out DIR [--no-search] [--verify]
+//	jiggle-go sitediff --perl DIR --go DIR
 package main
 
 import (
@@ -26,6 +27,8 @@ func main() {
 		err = runCheck(ctx, os.Args[2:])
 	case "build":
 		err = runBuild(ctx, os.Args[2:])
+	case "sitediff":
+		err = runSiteDiff(ctx, os.Args[2:])
 	default:
 		usage()
 	}
@@ -36,7 +39,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: jiggle-go migrate|check|build [options]; jiggle-go COMMAND -h for options")
+	fmt.Fprintln(os.Stderr, "usage: jiggle-go migrate|check|build|sitediff [options]; jiggle-go COMMAND -h for options")
 	os.Exit(2)
 }
 
