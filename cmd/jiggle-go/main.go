@@ -2,6 +2,7 @@
 // has this name until it takes over from Perl jiggle, and then it is jiggle.
 //
 //	jiggle-go migrate --library DIR --out FILE
+//	jiggle-go check --db FILE [--dump FILE]
 package main
 
 import (
@@ -20,6 +21,8 @@ func main() {
 	switch os.Args[1] {
 	case "migrate":
 		err = runMigrate(ctx, os.Args[2:])
+	case "check":
+		err = runCheck(ctx, os.Args[2:])
 	default:
 		usage()
 	}
@@ -30,7 +33,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: jiggle-go migrate [options]; jiggle-go COMMAND -h for options")
+	fmt.Fprintln(os.Stderr, "usage: jiggle-go migrate|check [options]; jiggle-go COMMAND -h for options")
 	os.Exit(2)
 }
 
