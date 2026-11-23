@@ -244,7 +244,7 @@ func neverPublished(t *testing.T, desc, set string) {
 func TestBuildNeverPublishes(t *testing.T) {
 	neverPublished(t, "a private photo", `visibility = 'private'`)
 	neverPublished(t, "a pending photo", `visibility = 'pending'`)
-	neverPublished(t, "a photo with no original yet", `blob_id = NULL`)
+	neverPublished(t, "a photo still being imported", `import_blob_id = blob_id, blob_id = NULL`)
 }
 
 func TestBuildLeavesOutAPhotoMissingARendition(t *testing.T) {

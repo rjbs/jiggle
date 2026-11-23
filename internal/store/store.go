@@ -80,6 +80,12 @@ CREATE TABLE blob (
 -- file that blob_id names, and change only when it does.  The width and
 -- height are of the original turned upright by its own EXIF orientation,
 -- before the photo's rotate.
+--
+-- The import_ columns are an import under way, or one that failed, if
+-- import_error says why: the file being made into the photo's original,
+-- and the name and modification time it had where it came from.  A new
+-- photo has an import and no blob_id yet.  A photo has one or the other,
+-- or both, while its original is being replaced or read again.
 CREATE TABLE photo (
   id               TEXT    NOT NULL PRIMARY KEY,
   type             TEXT    NOT NULL CHECK (type IN ('photo', 'video')),
@@ -101,11 +107,19 @@ CREATE TABLE photo (
   width            INTEGER,
   height           INTEGER,
   duration         REAL,
+  import_blob_id   TEXT    UNIQUE REFERENCES blob (id),
+  import_error     TEXT,
+  import_name      TEXT,
+  import_mtime     TEXT,
   created_modseq   INTEGER NOT NULL,
   modseq           INTEGER NOT NULL,
-  CHECK ((lat IS NULL) = (lon IS NULL))
+  CHECK ((lat IS NULL) = (lon IS NULL)),
+  CHECK (blob_id IS NOT NULL OR import_blob_id IS NOT NULL),
+  CHECK (import_blob_id IS NOT NULL OR
+         (import_error IS NULL AND import_name IS NULL AND import_mtime IS NULL))
 ) STRICT;
 CREATE INDEX photo_modseq ON photo (modseq);
+CREATE INDEX photo_import ON photo (import_blob_id) WHERE import_blob_id IS NOT NULL;
 
 -- A photo's tags, lowercase.  They have no order of their own, and are
 -- shown in order of name.
@@ -161,6 +175,22 @@ CREATE TABLE photo_rendition (
 ) STRICT;
 CREATE INDEX photo_rendition_blob     ON photo_rendition (blob_id);
 CREATE INDEX photo_rendition_original ON photo_rendition (original);
+
+-- The renditions made so far by a photo's import, which become the
+-- photo's renditions, all at once, when every one of them has been made.
+-- Until then the photo is shown by the ones it had.
+CREATE TABLE import_rendition (
+  photo_id TEXT    NOT NULL REFERENCES photo (id) ON DELETE CASCADE,
+  name     TEXT    NOT NULL,
+  blob_id  TEXT    NOT NULL REFERENCES blob (id),
+  original TEXT    NOT NULL REFERENCES blob (id),
+  version  TEXT    NOT NULL,
+  rotate   INTEGER NOT NULL,
+  width    INTEGER NOT NULL,
+  height   INTEGER NOT NULL,
+  PRIMARY KEY (photo_id, name)
+) STRICT;
+CREATE INDEX import_rendition_blob ON import_rendition (blob_id);
 
 -- Flickr's own records of what was imported from it, byte for byte: one
 -- for each photo, named by its Flickr id, and one named albums.  They hold

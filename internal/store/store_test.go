@@ -18,7 +18,8 @@ func newStore(t *testing.T) *Store {
 	return s
 }
 
-// insertPhoto makes a bare photo with the given id, by way of the kit.
+// insertPhoto makes a bare photo with the given id, by way of the kit,
+// and a blob for its original.
 func insertPhoto(t *testing.T, s *Store, id string) {
 	t.Helper()
 	ctx := context.Background()
@@ -26,9 +27,14 @@ func insertPhoto(t *testing.T, s *Store, id string) {
 	if err != nil {
 		t.Fatalf("Kit.Create(%s): %v", id, err)
 	}
+	blob := OriginalBlobID(id)
+	_, err = s.DB.ExecContext(ctx, `INSERT INTO blob (id, bytes, ext, path) VALUES (?, 1, 'jpg', ?)`, blob, id+".jpg")
+	if err != nil {
+		t.Fatalf("inserting a blob for %s: %v", id, err)
+	}
 	_, err = s.DB.ExecContext(ctx,
-		`INSERT INTO photo (id, type, visibility, created_modseq, modseq)
-		 VALUES (?, 'photo', 'pending', ?, ?)`, id, modseq, modseq)
+		`INSERT INTO photo (id, type, visibility, blob_id, created_modseq, modseq)
+		 VALUES (?, 'photo', 'pending', ?, ?, ?)`, id, blob, modseq, modseq)
 	if err != nil {
 		t.Fatalf("inserting photo %s: %v", id, err)
 	}
@@ -108,6 +114,10 @@ func TestConstraints(t *testing.T) {
 		`INSERT INTO photo_tag (photo_id, tag) VALUES ('bbbbbbbbbbbb', 'x')`)
 	refused(t, s, "a blob that doesn't exist",
 		`UPDATE photo SET blob_id = 'nope'`)
+	refused(t, s, "neither an original nor an import",
+		`UPDATE photo SET blob_id = NULL`)
+	refused(t, s, "an import's error with no import",
+		`UPDATE photo SET import_error = 'it broke'`)
 }
 
 func TestCreateRefusesAnExistingDatabase(t *testing.T) {
