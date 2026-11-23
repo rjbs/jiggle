@@ -1186,7 +1186,7 @@ sub feed_xml ($self) {
       $title = sprintf '%s, and %d more', $self->display_title($photos[0]), @photos - 1;
       $url   = $self->absolute_url($day->{by} eq 'taken' ? $self->month_url($y, $m) : '/archive/undated/');
       $html  = $self->_feed_day_html($day, $url);
-      @tags  = do { my %seen; grep {; ! $seen{$_}++ } map {; $_->tags->@* } @photos };
+      @tags  = do { my %seen; sort grep {; ! $seen{$_}++ } map {; $_->tags->@* } @photos };
 
       # Many days share a month page, so the entry's id can't be its URL.  A
       # tag URI names the day itself, so it stays the same when the day gets

@@ -118,7 +118,8 @@ private = true                    # never publish this location
 - `added` is when the photo joined the collection: set at ingest, or to the
   Flickr upload time on import.  Photos imported before it existed have only
   `flickr_uploaded`, which means the same.  The feed sorts by it.
-- `tags` are lowercase.  A tag with capitals is read as lowercase, and a build
+- `tags` are lowercase, and have no order: they are read, written and shown
+  in order of name.  A tag with capitals is read as lowercase, and a build
   warns about the files that have them.  On the site, tags are compared (and
   named in URLs) by slug, so `high st` and `high-st` are one tag there.
 - `rotate` is a turn beyond what the file's EXIF orientation calls for, like a

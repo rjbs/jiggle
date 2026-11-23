@@ -40,6 +40,10 @@ has taken => (is => 'ro');
 # Tags are lowercase.  Any given with capitals are lowercased (and then any
 # duplicates dropped), and the photo remembers that it had them, so a build
 # can say which metadata files still need fixing.  -- claude, 2026-09-30
+#
+# They're kept in order of name, whatever order they were given in: a
+# photo's tags are a set, and that's the order the site shows them in.
+# -- claude, 2026-11-23
 has tags  => (is => 'ro', default => sub { [] });
 has had_capital_tags => (is => 'ro', init_arg => '_had_capital_tags', default => 0);
 
@@ -54,7 +58,7 @@ around BUILDARGS => sub ($orig, $class, @args) {
   return $arg unless ref $arg->{tags} eq 'ARRAY';
 
   my (%seen, $capitals);
-  my @tags = grep {; ! $seen{$_}++ } map {; $capitals = 1 if $_ ne lc; lc } $arg->{tags}->@*;
+  my @tags = sort grep {; ! $seen{$_}++ } map {; $capitals = 1 if $_ ne lc; lc } $arg->{tags}->@*;
   return { %$arg, tags => \@tags, ($capitals ? (_had_capital_tags => 1) : ()) };
 };
 
