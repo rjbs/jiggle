@@ -166,6 +166,14 @@ CREATE TABLE photo_rendition (
   PRIMARY KEY (photo_id, name)
 ) STRICT;
 CREATE INDEX photo_rendition_rendition ON photo_rendition (rendition_id);
+
+-- Flickr's own records of what was imported from it, byte for byte: one
+-- for each photo, named by its Flickr id, and one named albums.  They hold
+-- what the importer had no use for, like comments.  Nothing reads them.
+CREATE TABLE flickr_record (
+  name TEXT NOT NULL PRIMARY KEY,
+  body BLOB NOT NULL
+) STRICT;
 `,
 }
 

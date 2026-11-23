@@ -534,3 +534,20 @@ func TestNoManifest(t *testing.T) {
 	rowsAre(t, db, `SELECT count(*) FROM rendition`, "0")
 	warningsAre(t, report, "there is no derived/manifest.json, so no renditions are recorded")
 }
+
+func TestFlickrRecords(t *testing.T) {
+	l := newLibrary(t)
+	l.photo("aaaaaaaaaaaa", `flickr_id = "2173311823"`)
+	l.file("meta/flickr/2173311823.json", "{ \"comments\" :\t[]}\n")
+	l.file("meta/flickr/albums.json", "[]")
+	l.file("meta/flickr/README", "what these are")
+	db, report := l.migrated()
+
+	rowsAre(t, db, `SELECT name, CAST(body AS TEXT) FROM flickr_record ORDER BY name`,
+		"2173311823|{ \"comments\" :\t[]}\n", "albums|[]")
+	warningsAre(t, report, "meta/flickr/README is not migrated")
+
+	if report.FlickrRecords != 2 {
+		t.Errorf("report: %+v", report)
+	}
+}

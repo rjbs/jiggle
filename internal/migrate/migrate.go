@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/rjbs/gizmo/sqlitekit"
@@ -35,6 +36,9 @@ type Report struct {
 
 	// Renditions is how many renditions already made were recorded.
 	Renditions int
+
+	// FlickrRecords is how many of Flickr's own records were copied.
+	FlickrRecords int
 
 	// Warnings are things about the library worth a look that didn't
 	// stop the migration.
@@ -99,7 +103,7 @@ func write(ctx context.Context, lib *library, out string) (*Report, error) {
 	defer tx.Rollback()
 
 	w := &writer{ctx: ctx, tx: tx, lib: lib, report: &Report{}}
-	for _, step := range []func() error{w.config, w.photos, w.albums, w.renditions} {
+	for _, step := range []func() error{w.config, w.photos, w.albums, w.renditions, w.flickr} {
 		if err := step(); err != nil {
 			return nil, err
 		}
@@ -258,6 +262,35 @@ func (w *writer) album(a *albumFile) error {
 		if err != nil {
 			return fmt.Errorf("photo %s: %w", photoID, err)
 		}
+	}
+	return nil
+}
+
+// flickr copies Flickr's records, the JSON files of meta/flickr, as they
+// are.
+func (w *writer) flickr() error {
+	dir := filepath.Join(w.lib.root, "meta", "flickr")
+	files, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		name, isJSON := strings.CutSuffix(file.Name(), ".json")
+		if !isJSON {
+			w.lib.warnf("meta/flickr/%s is not migrated", file.Name())
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, file.Name()))
+		if err != nil {
+			return err
+		}
+		if err := w.exec(`INSERT INTO flickr_record (name, body) VALUES (?, ?)`, name, body); err != nil {
+			return fmt.Errorf("meta/flickr/%s: %w", file.Name(), err)
+		}
+		w.report.FlickrRecords++
 	}
 	return nil
 }
