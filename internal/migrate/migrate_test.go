@@ -410,6 +410,8 @@ func TestProblems(t *testing.T) {
 		func(l *testLibrary) { l.photo("bbbbbbbbbbbb", `rotate = 45`) })
 	problem("a date for a datetime", "meta/bb/bbbbbbbbbbbb.toml: ",
 		func(l *testLibrary) { l.photo("bbbbbbbbbbbb", `taken = 2018-12-25`) })
+	problem("an impossible date", "meta/bb/bbbbbbbbbbbb.toml: ",
+		func(l *testLibrary) { l.photo("bbbbbbbbbbbb", `taken = 2026-02-30T12:00:00`) })
 	problem("no [original]", "no [original]",
 		func(l *testLibrary) { l.file("meta/bb/bbbbbbbbbbbb.toml", `id = "bbbbbbbbbbbb"`) })
 	problem("a missing original", "its original, originals/aa/aaaaaaaaaaaa.jpg, is missing",
@@ -592,4 +594,13 @@ func TestFlickrRecords(t *testing.T) {
 	if report.FlickrRecords != 2 {
 		t.Errorf("report: %+v", report)
 	}
+}
+
+func TestALibraryWithNothingInIt(t *testing.T) {
+	l := newLibrary(t)
+	l.manifest = nil
+	db, report := l.migrated()
+
+	rowsAre(t, db, `SELECT (SELECT count(*) FROM photo), (SELECT count(*) FROM album)`, "0|0")
+	warningsAre(t, report, "there is no derived/manifest.json, so no renditions are recorded")
 }

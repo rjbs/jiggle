@@ -202,6 +202,10 @@ func readLibrary(root string) (*library, error) {
 func (l *library) readPhotos() error {
 	meta := filepath.Join(l.root, "meta")
 	shards, err := os.ReadDir(meta)
+	if errors.Is(err, os.ErrNotExist) {
+		// A library nothing has been put into yet.
+		return nil
+	}
 	if err != nil {
 		return err
 	}
