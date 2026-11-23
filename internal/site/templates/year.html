@@ -1,0 +1,12 @@
+{{template "_period_nav" .}}
+<h1>{{.Year}} <span class="count">{{.Count}}</span></h1>
+{{- range .Months}}
+<section class="archive-month">
+  <h2><a href="{{.URL}}">{{.Name}}</a>
+    <span class="count">{{.Count}}</span></h2>
+  {{template "_grid" .Tiles}}
+{{- if .More}}
+  <p class="more"><a href="{{.URL}}">{{.More}} &rarr;</a></p>
+{{- end}}
+</section>
+{{- end}}

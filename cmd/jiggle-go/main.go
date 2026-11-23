@@ -3,6 +3,7 @@
 //
 //	jiggle-go migrate --library DIR --out FILE
 //	jiggle-go check --db FILE [--dump FILE]
+//	jiggle-go build --db FILE --library DIR --out DIR [--no-search] [--verify]
 package main
 
 import (
@@ -23,6 +24,8 @@ func main() {
 		err = runMigrate(ctx, os.Args[2:])
 	case "check":
 		err = runCheck(ctx, os.Args[2:])
+	case "build":
+		err = runBuild(ctx, os.Args[2:])
 	default:
 		usage()
 	}
@@ -33,7 +36,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: jiggle-go migrate|check [options]; jiggle-go COMMAND -h for options")
+	fmt.Fprintln(os.Stderr, "usage: jiggle-go migrate|check|build [options]; jiggle-go COMMAND -h for options")
 	os.Exit(2)
 }
 

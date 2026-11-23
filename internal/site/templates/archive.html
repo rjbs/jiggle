@@ -1,0 +1,11 @@
+<h1>Archive</h1>
+{{- range .Years}}
+<section class="archive-year">
+  <h2><a href="{{.URL}}">{{.Year}}</a>
+    <span class="count">{{.Count}}</span></h2>
+  {{template "_grid" .Tiles}}
+</section>
+{{- end}}
+{{- if .Undated}}
+<p><a href="/archive/undated/">Undated</a> <span class="count">{{.Undated}}</span></p>
+{{- end}}
