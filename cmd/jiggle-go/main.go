@@ -6,6 +6,7 @@
 //	jiggle-go build --db FILE --library DIR --out DIR [--no-search] [--verify]
 //	jiggle-go sitediff --perl DIR --go DIR
 //	jiggle-go serve --db FILE --library DIR [--listen ADDR] [--tailnet NAME ...]
+//	jiggle-go backup --db FILE --to DIR [--keep N]
 package main
 
 import (
@@ -30,6 +31,8 @@ func main() {
 		err = runBuild(ctx, os.Args[2:])
 	case "sitediff":
 		err = runSiteDiff(ctx, os.Args[2:])
+	case "backup":
+		err = runBackup(ctx, os.Args[2:])
 	case "serve":
 		err = runServe(ctx, os.Args[2:])
 	default:
@@ -42,7 +45,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: jiggle-go migrate|check|build|sitediff|serve [options]; jiggle-go COMMAND -h for options")
+	fmt.Fprintln(os.Stderr, "usage: jiggle-go migrate|check|build|sitediff|serve|backup [options]; jiggle-go COMMAND -h for options")
 	os.Exit(2)
 }
 
