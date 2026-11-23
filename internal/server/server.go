@@ -165,7 +165,7 @@ func (s *Server) Handler() http.Handler {
 		p.Register(name, Capability, auth.ForAccount(find, method))
 	}
 
-	return auth.Loopback(s.dir, httpd.New(httpd.Config{
+	return sameOriginOnly(auth.Loopback(s.dir, httpd.New(httpd.Config{
 		BaseURL:   s.cfg.BaseURL,
 		Processor: p,
 		Directory: s.dir,
@@ -184,7 +184,7 @@ func (s *Server) Handler() http.Handler {
 		Capabilities: map[string]any{Capability: map[string]any{}},
 		Blobs:        s,
 		Logger:       s.cfg.Log,
-	}))
+	})))
 }
 
 // txn is a transaction on the database, of the kind Gizmo's state kit
