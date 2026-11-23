@@ -265,6 +265,13 @@ sub prune ($self, $arg = {}) {
       }
 
       my $rel = $path->relative($self->root)->stringify;
+
+      # A name read from the disk is bytes, and the paths produced are
+      # characters, so a path like tags/s\x{f8}ren/index.html would never
+      # be found among them, and would be pruned as soon as it was written.
+      # -- claude, 2026-11-22
+      utf8::decode($rel);
+
       next unless $wanted->($rel);
 
       $path->remove;

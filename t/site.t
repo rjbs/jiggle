@@ -259,6 +259,25 @@ subtest 'rebuilding changes nothing, and pruning removes the stale' => sub {
   ok(! -e $dir->child('p/zzzz0001'), 'with verify, a stray file is pruned');
 };
 
+subtest 'a page whose path is not ASCII' => sub {
+  my ($site, $dir, $library) = built_site(
+    photos => [ { id => 'aaaa0001', tags => [ "s\x{f8}ren" ] } ],
+  );
+
+  # On the disk, the path is UTF-8.
+  my $page = $dir->child("tags/s\xc3\xb8ren/index.html");
+
+  # The first build has no manifest, so it prunes by walking the tree, as a
+  # build with verify does.
+  ok(-e $page, "the tag's page is there after a first build");
+
+  my $rebuild = Jiggle::Site->new({ library => $library, verify => 1 });
+  $rebuild->build;
+  ok(-e $page, '...and after a build with verify');
+  is($rebuild->writer->stats->{written}, 0, '...which wrote nothing');
+  is($rebuild->writer->stats->{pruned},  0, '...and pruned nothing');
+};
+
 sub embed_of ($dir, $id) {
   my $file = $dir->child('p', $id, 'embed.json');
   return -e $file ? JSON::MaybeXS::decode_json($file->slurp_raw) : undef;
