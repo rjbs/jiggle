@@ -8,6 +8,7 @@ use lib 'lib', 't/lib';
 use Jiggle::Library;
 use Jiggle::Site;
 use Jiggle::TestGo;
+use JSON::MaybeXS ();
 
 # This tests the site builder in Go against the one in Perl: each builds the
 # site from the same library, Go's by way of a migration, and the two sites
@@ -16,6 +17,15 @@ use Jiggle::TestGo;
 # must be none.  So it needs Go.
 
 go_or_skip();
+
+# The links a build's manifest records: path => the link's key.  What each
+# is a link to isn't compared.  The renditions of a test library are all
+# the same bytes, which makes them one blob, at one path, to Go; and so are
+# a few of a real library's.
+sub manifest_links ($file) {
+  my $files = JSON::MaybeXS::decode_json($file->slurp_raw)->{files};
+  return { map {; $_ => $files->{$_}{key} } grep {; $files->{$_}{link} } keys %$files };
+}
 
 # Build a library's site both ways and compare them.  Returns the status and
 # output of the comparison.  If there's a "between", it's called with the
@@ -34,6 +44,16 @@ sub compared_sites (%arg) {
   ($status, $out) = jiggle_go(build => '--db', $db, '--library', $root,
     '--out', $root->child('site-go'), '--no-search');
   is($status, 0, 'the Go build worked') or diag $out;
+
+  # The sync to Bunny uploads whatever the build's manifest says differently
+  # from its record of the last upload.  So the two manifests have to give
+  # every picture the same key, or the first sync of a site built by Go
+  # would upload them all again.
+  is_deeply(
+    manifest_links($root->child('site-go.manifest.json')),
+    manifest_links($root->child('.jiggle', 'site-manifest.json')),
+    'the manifests agree about every link',
+  ) unless $between;
 
   return jiggle_go(sitediff => '--perl', $root->child('site'), '--go', $root->child('site-go'),
     '--equivalent', '--show', 50);

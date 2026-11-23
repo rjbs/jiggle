@@ -206,11 +206,9 @@ func (b *builder) photoPages() error {
 			if !recipe.Publish {
 				continue
 			}
-			// A rendition's blobId is a digest of its bytes, so it
-			// changes exactly when the link has to be made again.
 			r := p.Renditions[recipe.Name]
 			rel := strings.TrimPrefix(RenditionURL(p, recipe.Name), "/")
-			if err := b.w.LinkFile(rel, filepath.Join(b.opts.Library, r.Path), r.BlobID); err != nil {
+			if err := b.w.LinkFile(rel, filepath.Join(b.opts.Library, r.Path), r.Key); err != nil {
 				return err
 			}
 		}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/rjbs/jiggle/internal/derive"
 )
@@ -87,6 +88,18 @@ type Rendition struct {
 	Width, Height int64
 	BlobID        string
 	Path          string
+
+	// Key changes whenever the rendition is made of something else or
+	// in some other way: it is the digest of the original it was made
+	// from, the version of its recipe, and the extra turn it was given.
+	//
+	// The blobId would say as much, and more simply.  But the key goes
+	// into the build's manifest, which the sync to Bunny compares with
+	// its record of what it uploaded, and this is the key Perl jiggle
+	// writes there.  So a site built here can be synced against the
+	// record Perl's syncs left, without every picture being uploaded
+	// again.  -- claude, 2026-11-23
+	Key string
 }
 
 // AlbumRecord is an album as the database has it: its photos by id, in
@@ -217,12 +230,17 @@ func (l *loader) photos() []*Photo {
 
 	renditions := map[string]map[string]*Rendition{}
 	l.rows(`
-		SELECT photo_id, name, width, height, blob.id, blob.path
+		SELECT photo_id, name, width, height, blob.id, blob.path, original, version, rotate
 		FROM photo_rendition JOIN blob ON blob.id = blob_id`,
 		func(scan func(...any)) {
-			var id, name string
+			var id, name, original, version string
+			var rotate int
 			var r Rendition
-			scan(&id, &name, &r.Width, &r.Height, &r.BlobID, &r.Path)
+			scan(&id, &name, &r.Width, &r.Height, &r.BlobID, &r.Path, &original, &version, &rotate)
+			r.Key = strings.TrimPrefix(original, "O") + ":" + version
+			if rotate != 0 {
+				r.Key += fmt.Sprintf("+rot%d", rotate)
+			}
 			if renditions[id] == nil {
 				renditions[id] = map[string]*Rendition{}
 			}
