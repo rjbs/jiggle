@@ -33,6 +33,9 @@ type Report struct {
 	Videos int
 	Albums int
 
+	// Renditions is how many renditions already made were recorded.
+	Renditions int
+
 	// Warnings are things about the library worth a look that didn't
 	// stop the migration.
 	Warnings []string
@@ -96,7 +99,7 @@ func write(ctx context.Context, lib *library, out string) (*Report, error) {
 	defer tx.Rollback()
 
 	w := &writer{ctx: ctx, tx: tx, lib: lib, report: &Report{}}
-	for _, step := range []func() error{w.config, w.photos, w.albums} {
+	for _, step := range []func() error{w.config, w.photos, w.albums, w.renditions} {
 		if err := step(); err != nil {
 			return nil, err
 		}

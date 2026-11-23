@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rjbs/jiggle/internal/derive"
 	"github.com/rjbs/jiggle/internal/store"
 )
 
@@ -18,11 +20,15 @@ import (
 type testLibrary struct {
 	t    *testing.T
 	root string
+
+	// manifest is what derived/manifest.json will hold: for each photo
+	// and rendition, a digest and a version.
+	manifest map[string]map[string]map[string]string
 }
 
 func newLibrary(t *testing.T) *testLibrary {
 	t.Helper()
-	l := &testLibrary{t: t, root: t.TempDir()}
+	l := &testLibrary{t: t, root: t.TempDir(), manifest: map[string]map[string]map[string]string{}}
 	l.file("jiggle.toml", "format = 2\n")
 	return l
 }
@@ -41,8 +47,38 @@ func (l *testLibrary) file(rel, content string) {
 
 func digestFor(id string) string { return id + strings.Repeat("0", 64-len(id)) }
 
+// render makes every rendition of a photo, as a placeholder file and an
+// entry in the manifest.  The turn is what Perl jiggle adds to a version
+// for a photo with a rotate, like "+rot90".
+func (l *testLibrary) render(id, mediaType, turn string) {
+	l.t.Helper()
+	l.manifest[id] = map[string]map[string]string{"_failed": {}}
+	for _, recipe := range derive.RecipesFor(mediaType) {
+		l.file(filepath.Join("derived", id[:2], id, recipe.Name), "rendition")
+		l.manifest[id][recipe.Name] = map[string]string{
+			"sha256":  digestFor(id),
+			"version": recipe.VersionFor(mediaType) + turn,
+		}
+	}
+}
+
+// writeManifest writes derived/manifest.json, unless the test has taken
+// the manifest away.
+func (l *testLibrary) writeManifest() {
+	l.t.Helper()
+	if l.manifest == nil {
+		return
+	}
+	data, err := json.Marshal(map[string]any{"version": 1, "photos": l.manifest})
+	if err != nil {
+		l.t.Fatal(err)
+	}
+	l.file("derived/manifest.json", string(data))
+}
+
 // photo adds a photo with the given id: its metadata file, holding the
-// given TOML before a stock [original], and a one-byte original.
+// given TOML before a stock [original], a one-byte original, and its
+// renditions.
 func (l *testLibrary) photo(id, toml string) {
 	l.t.Helper()
 	l.file(filepath.Join("meta", id[:2], id+".toml"), fmt.Sprintf(`id = %q
@@ -57,6 +93,7 @@ width = 4000
 height = 3000
 `, id, toml, digestFor(id)))
 	l.file(filepath.Join("originals", id[:2], id+".jpg"), "x")
+	l.render(id, "photo", "")
 }
 
 func (l *testLibrary) album(slug, toml string) {
@@ -70,6 +107,7 @@ func (l *testLibrary) out() string { return filepath.Join(l.root, "jiggle.sqlite
 // and the migration's report.
 func (l *testLibrary) migrated() (*sql.DB, *Report) {
 	l.t.Helper()
+	l.writeManifest()
 	report, err := Run(context.Background(), Options{Library: l.root, Out: l.out()})
 	if err != nil {
 		l.t.Fatalf("migrate: %v", err)
@@ -86,6 +124,7 @@ func (l *testLibrary) migrated() (*sql.DB, *Report) {
 // problems found says what's wanted, and that no database was left behind.
 func (l *testLibrary) hasProblem(want string) {
 	l.t.Helper()
+	l.writeManifest()
 	_, err := Run(context.Background(), Options{Library: l.root, Out: l.out()})
 
 	var problems *ProblemsError
@@ -203,6 +242,7 @@ lon = -75.373222
 private = true
 `)
 	l.file("originals/00/000000123456.mov", "mov")
+	l.render("000000123456", "video", "+rot270")
 	db, report := l.migrated()
 
 	rowsAre(t, db, `SELECT id, type, title, description, taken, visibility, rotate, added FROM photo`,
@@ -402,4 +442,95 @@ func TestOutMustNotExist(t *testing.T) {
 	if got, _ := os.ReadFile(l.out()); string(got) != "precious" {
 		t.Errorf("the file in the way is now %q", got)
 	}
+}
+
+func TestRenditions(t *testing.T) {
+	l := newLibrary(t)
+	l.photo("aaaaaaaaaaaa", ``)
+	db, report := l.migrated()
+
+	rowsAre(t, db, `
+		SELECT photo_rendition.name, version, rendition.rotate, rendition.width, rendition.height, bytes, path,
+		       original = blob_id, rendition.name = photo_rendition.name
+		FROM photo_rendition
+		JOIN photo ON photo.id = photo_id
+		JOIN rendition ON rendition.id = rendition_id
+		ORDER BY rendition.width`,
+		"500.webp|1|0|500|375|9|derived/aa/aaaaaaaaaaaa/500.webp|1|1",
+		"h480.webp|1|0|640|480|9|derived/aa/aaaaaaaaaaaa/h480.webp|1|1",
+		"1024.webp|1|0|1024|768|9|derived/aa/aaaaaaaaaaaa/1024.webp|1|1",
+		"og.jpg|1|0|1200|900|9|derived/aa/aaaaaaaaaaaa/og.jpg|1|1",
+		"2048.webp|1|0|2048|1536|9|derived/aa/aaaaaaaaaaaa/2048.webp|1|1")
+	rowsAre(t, db, `SELECT count(*) FROM rendition WHERE id LIKE 'r%' AND length(id) = 41`, "5")
+	warningsAre(t, report)
+
+	if report.Renditions != 5 {
+		t.Errorf("report: %+v", report)
+	}
+}
+
+// A video has a poster, and its images are made from that.  A photo's
+// extra turn swaps the width and height of what's made from it, and is in
+// Perl jiggle's versions, but is a column here.
+func TestRenditionsOfATurnedVideo(t *testing.T) {
+	l := newLibrary(t)
+	l.photo("aaaaaaaaaaaa", "type = \"video\"\nrotate = 90")
+	l.render("aaaaaaaaaaaa", "video", "+rot90")
+	db, report := l.migrated()
+
+	rowsAre(t, db, `
+		SELECT name, version, rotate, width, height FROM rendition ORDER BY height, name`,
+		"h480.webp|1+poster1|90|360|480",
+		"500.webp|1+poster1|90|375|500",
+		"1024.webp|1+poster1|90|768|1024",
+		"og.jpg|1+poster1|90|900|1200",
+		"video.mp4|1|90|1440|1920",
+		"2048.webp|1+poster1|90|1536|2048",
+		"poster.png|1|90|3000|4000")
+	warningsAre(t, report)
+}
+
+// notRendered checks that a photo whose renditions have been spoiled in
+// some way has those left out of the database, with a warning.
+func notRendered(t *testing.T, desc string, wantRenditions string, wantWarnings []string, spoil func(l *testLibrary)) {
+	t.Helper()
+	t.Run(desc, func(t *testing.T) {
+		t.Helper()
+		l := newLibrary(t)
+		l.photo("aaaaaaaaaaaa", ``)
+		l.photo("bbbbbbbbbbbb", ``)
+		spoil(l)
+		db, report := l.migrated()
+
+		rowsAre(t, db, `SELECT photo_id, count(*) FROM photo_rendition GROUP BY photo_id ORDER BY photo_id`,
+			"aaaaaaaaaaaa|5", wantRenditions)
+		rowsAre(t, db, `SELECT count(*) = (SELECT count(*) FROM photo_rendition) FROM rendition`, "1")
+		warningsAre(t, report, wantWarnings...)
+	})
+}
+
+func TestRenditionsNotRecorded(t *testing.T) {
+	incomplete := []string{"1 photo(s) don't have all their renditions"}
+
+	notRendered(t, "made from another original", "bbbbbbbbbbbb|4", incomplete,
+		func(l *testLibrary) { l.manifest["bbbbbbbbbbbb"]["og.jpg"]["sha256"] = digestFor("cccccccccccc") })
+	notRendered(t, "made by another version of the recipe", "bbbbbbbbbbbb|4", incomplete,
+		func(l *testLibrary) { l.manifest["bbbbbbbbbbbb"]["og.jpg"]["version"] = "0" })
+	notRendered(t, "made before the photo was turned", "bbbbbbbbbbbb|4", incomplete,
+		func(l *testLibrary) { l.manifest["bbbbbbbbbbbb"]["og.jpg"]["version"] = "1+rot90" })
+	notRendered(t, "never made", "bbbbbbbbbbbb|4", incomplete,
+		func(l *testLibrary) { delete(l.manifest["bbbbbbbbbbbb"], "og.jpg") })
+	notRendered(t, "in the manifest, but not on the disk", "bbbbbbbbbbbb|4",
+		[]string{"1 rendition(s) in derived/manifest.json have no file", incomplete[0]},
+		func(l *testLibrary) { os.Remove(filepath.Join(l.root, "derived/bb/bbbbbbbbbbbb/og.jpg")) })
+}
+
+func TestNoManifest(t *testing.T) {
+	l := newLibrary(t)
+	l.photo("aaaaaaaaaaaa", ``)
+	l.manifest = nil
+	db, report := l.migrated()
+
+	rowsAre(t, db, `SELECT count(*) FROM rendition`, "0")
+	warningsAre(t, report, "there is no derived/manifest.json, so no renditions are recorded")
 }

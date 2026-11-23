@@ -23,8 +23,9 @@ func runMigrate(ctx context.Context, args []string) error {
 	for _, warning := range r.Warnings {
 		fmt.Fprintln(os.Stderr, "warning:", warning)
 	}
-	fmt.Printf("photos: %d\n", r.Photos)
-	fmt.Printf("videos: %d\n", r.Videos)
-	fmt.Printf("albums: %d\n", r.Albums)
+	fmt.Printf("photos:     %d\n", r.Photos)
+	fmt.Printf("videos:     %d\n", r.Videos)
+	fmt.Printf("albums:     %d\n", r.Albums)
+	fmt.Printf("renditions: %d\n", r.Renditions)
 	return nil
 }
