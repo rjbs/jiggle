@@ -57,24 +57,3 @@ func TestRecipesFor(t *testing.T) {
 	namesFor(t, "video", "poster.png@1", "h480.webp@1+poster1", "500.webp@1+poster1",
 		"1024.webp@1+poster1", "2048.webp@1+poster1", "og.jpg@1+poster1", "video.mp4@1")
 }
-
-func TestBlobID(t *testing.T) {
-	const original = "3f9a0c21b7e40000000000000000000000000000000000000000000000000000"
-	id := BlobID(original, "1024.webp", "1", 0)
-	if len(id) != 41 || id[0] != 'r' {
-		t.Errorf("a rendition's blobId is %q", id)
-	}
-	if id != BlobID(original, "1024.webp", "1", 0) {
-		t.Errorf("a rendition's blobId changes from one call to the next")
-	}
-	for desc, other := range map[string]string{
-		"name":     BlobID(original, "2048.webp", "1", 0),
-		"version":  BlobID(original, "1024.webp", "2", 0),
-		"rotate":   BlobID(original, "1024.webp", "1", 90),
-		"original": BlobID("4"+original[1:], "1024.webp", "1", 0),
-	} {
-		if other == id {
-			t.Errorf("a rendition's blobId doesn't depend on its %s", desc)
-		}
-	}
-}

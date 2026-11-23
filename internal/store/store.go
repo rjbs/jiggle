@@ -58,9 +58,13 @@ CREATE TABLE private_zone (
   radius REAL NOT NULL
 ) STRICT;
 
--- A file kept exactly as it came: a photo's original, or an upload that
--- may become one.  Its id, which is its blobId, is the SHA-256 of its
--- bytes, in hex.  The path is relative to the library.
+-- A file: an original, kept exactly as it came, or a rendition made from
+-- one.  Its id, which is its blobId, is a letter and the SHA-256 of its
+-- bytes, in hex.  The letter is O for an original, which an upload is from
+-- the moment it arrives, whether or not it has become a photo yet, and R
+-- for a rendition.  So the same bytes can be both, as two blobs, each kept
+-- for as long as its own kind is.  Two renditions with the same bytes are
+-- one blob.  The path is relative to the library.
 CREATE TABLE blob (
   id    TEXT    NOT NULL PRIMARY KEY,
   bytes INTEGER NOT NULL,
@@ -139,33 +143,25 @@ CREATE TABLE album_photo (
 ) STRICT;
 CREATE INDEX album_photo_photo ON album_photo (photo_id);
 
--- A file made from an original: what was made (its name, like 1024.webp),
--- from which original, by which version of the recipe, and with what extra
--- turn.  Those four decide its bytes, and its id, which is its blobId, is
--- made from them.  A rendition is never overwritten.  The width and height
--- are its own, in pixels.
-CREATE TABLE rendition (
-  id       TEXT    NOT NULL PRIMARY KEY,
-  original TEXT    NOT NULL REFERENCES blob (id),
+-- The renditions a photo is shown by now: for each name, like 1024.webp,
+-- the blob, its size in pixels, and what it was made from: which original,
+-- by which version of the recipe, and with what extra turn.  Those may be
+-- older than the photo's own original and rotate, while newer renditions
+-- are being made.  They don't decide the blob's bytes, which can change
+-- when the programs that make renditions do.
+CREATE TABLE photo_rendition (
+  photo_id TEXT    NOT NULL REFERENCES photo (id) ON DELETE CASCADE,
   name     TEXT    NOT NULL,
+  blob_id  TEXT    NOT NULL REFERENCES blob (id),
+  original TEXT    NOT NULL REFERENCES blob (id),
   version  TEXT    NOT NULL,
   rotate   INTEGER NOT NULL,
   width    INTEGER NOT NULL,
   height   INTEGER NOT NULL,
-  bytes    INTEGER NOT NULL,
-  path     TEXT    NOT NULL UNIQUE,
-  UNIQUE (original, name, version, rotate)
-) STRICT;
-
--- The renditions a photo is shown by now.  They may be older than the
--- photo's rotate or its original, while newer ones are being made.
-CREATE TABLE photo_rendition (
-  photo_id     TEXT NOT NULL REFERENCES photo (id) ON DELETE CASCADE,
-  name         TEXT NOT NULL,
-  rendition_id TEXT NOT NULL REFERENCES rendition (id),
   PRIMARY KEY (photo_id, name)
 ) STRICT;
-CREATE INDEX photo_rendition_rendition ON photo_rendition (rendition_id);
+CREATE INDEX photo_rendition_blob     ON photo_rendition (blob_id);
+CREATE INDEX photo_rendition_original ON photo_rendition (original);
 
 -- Flickr's own records of what was imported from it, byte for byte: one
 -- for each photo, named by its Flickr id, and one named albums.  They hold
@@ -184,6 +180,14 @@ var Kit = sqlitekit.New(
 	sqlitekit.Type{Name: TypePhoto, Table: "photo", NewID: newPhotoID},
 	sqlitekit.Type{Name: TypeAlbum, Table: "album"},
 )
+
+// OriginalBlobID is the blobId of an original, or of an upload that may
+// become one, whose bytes have the given SHA-256, in hex.
+func OriginalBlobID(sha256 string) string { return "O" + sha256 }
+
+// RenditionBlobID is the blobId of a rendition whose bytes have the given
+// SHA-256, in hex.
+func RenditionBlobID(sha256 string) string { return "R" + sha256 }
 
 func newPhotoID() (string, error) {
 	var b [6]byte

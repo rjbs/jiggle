@@ -158,8 +158,7 @@ func (r *reader) photos() []map[string]any {
 
 	sizes := map[string]map[string]any{}
 	r.rows(`
-		SELECT photo_id, photo_rendition.name, width, height
-		FROM photo_rendition JOIN rendition ON rendition.id = rendition_id`,
+		SELECT photo_id, name, width, height FROM photo_rendition`,
 		func(scan func(...any)) {
 			var id, name string
 			var width, height float64
@@ -175,7 +174,7 @@ func (r *reader) photos() []map[string]any {
 		SELECT photo.id, type, title, description, taken, visibility, rotate,
 		       added, flickr_id, flickr_uploaded, lat, lon, location_private,
 		       original_name, original_mtime, width, height, duration,
-		       blob.id, blob.bytes, blob.ext
+		       substr(blob.id, 2), blob.bytes, blob.ext
 		FROM photo LEFT JOIN blob ON blob.id = blob_id
 		ORDER BY photo.id`,
 		func(scan func(...any)) {

@@ -3,8 +3,6 @@
 package derive
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"math"
 )
@@ -98,12 +96,4 @@ func (r Recipe) Size(width, height int64) (int64, int64) {
 		return 2 * int64(math.Floor(w*scale/2+0.5)), 2 * int64(math.Floor(h*scale/2+0.5))
 	}
 	return int64(math.Floor(w*scale + 0.5)), int64(math.Floor(h*scale + 0.5))
-}
-
-// BlobID is the blobId of a rendition: an "r", and then a digest of what
-// decides its bytes, which are its original's blobId, its name, the version
-// of its recipe, and the extra clockwise turn it was given, in degrees.
-func BlobID(original, name, version string, rotate int64) string {
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%s\x00%s\x00%d", original, name, version, rotate))
-	return "r" + hex.EncodeToString(sum[:20])
 }

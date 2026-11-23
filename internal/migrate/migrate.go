@@ -178,13 +178,14 @@ func (w *writer) photo(p *photoFile) error {
 	// Two photos can't have one original.  The blob table would refuse
 	// the second anyway, but less clearly.
 	var other string
-	err := w.tx.QueryRowContext(w.ctx, `SELECT id FROM photo WHERE blob_id = ?`, o.SHA256).Scan(&other)
+	blobID := store.OriginalBlobID(o.SHA256)
+	err := w.tx.QueryRowContext(w.ctx, `SELECT id FROM photo WHERE blob_id = ?`, blobID).Scan(&other)
 	if err == nil {
 		return fmt.Errorf("it has the same original as photo %s", other)
 	}
 
 	err = w.exec(`INSERT INTO blob (id, bytes, ext, path) VALUES (?, ?, ?, ?)`,
-		o.SHA256, o.Bytes, o.Ext, originalPath(p.ID, o.Ext))
+		blobID, o.Bytes, o.Ext, originalPath(p.ID, o.Ext))
 	if err != nil {
 		return err
 	}
@@ -211,7 +212,7 @@ func (w *writer) photo(p *photoFile) error {
 		p.ID, p.Type, p.Title, p.Description, p.Taken.ptr(), p.Visibility, p.Rotate,
 		p.Added.ptr(), p.FlickrID, p.FlickrUploaded.ptr(),
 		lat, lon, private,
-		o.SHA256, o.File, o.SourceMtime.ptr(), o.Width, o.Height, o.Duration,
+		blobID, o.File, o.SourceMtime.ptr(), o.Width, o.Height, o.Duration,
 		modseq, modseq)
 	if err != nil {
 		return err

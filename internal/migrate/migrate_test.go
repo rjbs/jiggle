@@ -2,6 +2,7 @@ package migrate
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -47,6 +48,14 @@ func (l *testLibrary) file(rel, content string) {
 
 func digestFor(id string) string { return id + strings.Repeat("0", 64-len(id)) }
 
+// renditionOf is what stands for the bytes of a rendition of a photo.
+func renditionOf(id, name string) string { return name + " of " + id }
+
+// blobIDOf is the blobId of a blob of the given kind, O or R, and content.
+func blobIDOf(kind, content string) string {
+	return fmt.Sprintf("%s%x", kind, sha256.Sum256([]byte(content)))
+}
+
 // render makes every rendition of a photo, as a placeholder file and an
 // entry in the manifest.  The turn is what Perl jiggle adds to a version
 // for a photo with a rotate, like "+rot90".
@@ -54,7 +63,7 @@ func (l *testLibrary) render(id, mediaType, turn string) {
 	l.t.Helper()
 	l.manifest[id] = map[string]map[string]string{"_failed": {}}
 	for _, recipe := range derive.RecipesFor(mediaType) {
-		l.file(filepath.Join("derived", id[:2], id, recipe.Name), "rendition")
+		l.file(filepath.Join("derived", id[:2], id, recipe.Name), renditionOf(id, recipe.Name))
 		l.manifest[id][recipe.Name] = map[string]string{
 			"sha256":  digestFor(id),
 			"version": recipe.VersionFor(mediaType) + turn,
@@ -195,11 +204,11 @@ func TestMinimalPhoto(t *testing.T) {
 		"3f9a0c21b7e4|photo|||NULL|public|0|NULL")
 	rowsAre(t, db, `SELECT lat, lon, location_private, flickr_id, flickr_uploaded FROM photo`,
 		"NULL|NULL|0|NULL|NULL")
-	rowsAre(t, db, `SELECT blob_id = id || '0000000000000000000000000000000000000000000000000000' FROM photo`,
+	rowsAre(t, db, `SELECT blob_id = 'O' || id || '0000000000000000000000000000000000000000000000000000' FROM photo`,
 		"1")
 	rowsAre(t, db, `SELECT original_name, original_mtime, width, height, duration FROM photo`,
 		"IMG_0001.JPG|NULL|4000|3000|NULL")
-	rowsAre(t, db, `SELECT bytes, ext, path FROM blob`,
+	rowsAre(t, db, `SELECT bytes, ext, path FROM blob WHERE id LIKE 'O%'`,
 		"1|jpg|originals/3f/3f9a0c21b7e4.jpg")
 	rowsAre(t, db, `SELECT count(*) FROM photo_tag`, "0")
 	warningsAre(t, report)
@@ -251,7 +260,7 @@ private = true
 		"40.623775|-75.373222|1|2173311823|2008-01-06T21:32:33-05:00")
 	rowsAre(t, db, `SELECT original_name, original_mtime, width, height, duration FROM photo`,
 		"legs.mov|2026-07-19T17:49:45-04:00|1920|1080|7.165")
-	rowsAre(t, db, `SELECT bytes, ext, path FROM blob`,
+	rowsAre(t, db, `SELECT bytes, ext, path FROM blob WHERE id LIKE 'O%'`,
 		"3|mov|originals/00/000000123456.mov")
 	rowsAre(t, db, `SELECT tag FROM photo_tag ORDER BY position`, "high-st", "café")
 
@@ -450,18 +459,22 @@ func TestRenditions(t *testing.T) {
 	db, report := l.migrated()
 
 	rowsAre(t, db, `
-		SELECT photo_rendition.name, version, rendition.rotate, rendition.width, rendition.height, bytes, path,
-		       original = blob_id, rendition.name = photo_rendition.name
-		FROM photo_rendition
-		JOIN photo ON photo.id = photo_id
-		JOIN rendition ON rendition.id = rendition_id
-		ORDER BY rendition.width`,
-		"500.webp|1|0|500|375|9|derived/aa/aaaaaaaaaaaa/500.webp|1|1",
-		"h480.webp|1|0|640|480|9|derived/aa/aaaaaaaaaaaa/h480.webp|1|1",
-		"1024.webp|1|0|1024|768|9|derived/aa/aaaaaaaaaaaa/1024.webp|1|1",
-		"og.jpg|1|0|1200|900|9|derived/aa/aaaaaaaaaaaa/og.jpg|1|1",
-		"2048.webp|1|0|2048|1536|9|derived/aa/aaaaaaaaaaaa/2048.webp|1|1")
-	rowsAre(t, db, `SELECT count(*) FROM rendition WHERE id LIKE 'r%' AND length(id) = 41`, "5")
+		SELECT name, version, photo_rendition.rotate, photo_rendition.width, photo_rendition.height,
+		       original = photo.blob_id
+		FROM photo_rendition JOIN photo ON photo.id = photo_id
+		ORDER BY photo_rendition.width`,
+		"500.webp|1|0|500|375|1",
+		"h480.webp|1|0|640|480|1",
+		"1024.webp|1|0|1024|768|1",
+		"og.jpg|1|0|1200|900|1",
+		"2048.webp|1|0|2048|1536|1")
+	rowsAre(t, db, `
+		SELECT blob.id, bytes, ext, path
+		FROM photo_rendition JOIN blob ON blob.id = blob_id
+		WHERE name IN ('og.jpg', '500.webp') ORDER BY name`,
+		blobIDOf("R", "500.webp of aaaaaaaaaaaa")+"|24|webp|derived/aa/aaaaaaaaaaaa/500.webp",
+		blobIDOf("R", "og.jpg of aaaaaaaaaaaa")+"|22|jpg|derived/aa/aaaaaaaaaaaa/og.jpg")
+	rowsAre(t, db, `SELECT count(*) FROM blob WHERE id LIKE 'R%' AND length(id) = 65`, "5")
 	warningsAre(t, report)
 
 	if report.Renditions != 5 {
@@ -479,7 +492,7 @@ func TestRenditionsOfATurnedVideo(t *testing.T) {
 	db, report := l.migrated()
 
 	rowsAre(t, db, `
-		SELECT name, version, rotate, width, height FROM rendition ORDER BY height, name`,
+		SELECT name, version, rotate, width, height FROM photo_rendition ORDER BY height, name`,
 		"h480.webp|1+poster1|90|360|480",
 		"500.webp|1+poster1|90|375|500",
 		"1024.webp|1+poster1|90|768|1024",
@@ -487,7 +500,36 @@ func TestRenditionsOfATurnedVideo(t *testing.T) {
 		"video.mp4|1|90|1440|1920",
 		"2048.webp|1+poster1|90|1536|2048",
 		"poster.png|1|90|3000|4000")
+	rowsAre(t, db, `SELECT ext, count(*) FROM blob WHERE id LIKE 'R%' GROUP BY ext ORDER BY ext`,
+		"jpg|1", "mp4|1", "png|1", "webp|4")
 	warningsAre(t, report)
+}
+
+// Renditions with the same bytes are one blob, whether they're two of one
+// photo's or of two photos.  An original with those bytes is another.
+func TestRenditionsWithTheSameBytes(t *testing.T) {
+	l := newLibrary(t)
+	l.photo("aaaaaaaaaaaa", ``)
+	l.photo("bbbbbbbbbbbb", ``)
+	l.file("derived/aa/aaaaaaaaaaaa/1024.webp", "x")
+	l.file("derived/aa/aaaaaaaaaaaa/2048.webp", "x")
+	l.file("derived/bb/bbbbbbbbbbbb/og.jpg", "x")
+	db, report := l.migrated()
+
+	rowsAre(t, db, `
+		SELECT photo_id, name, blob.path
+		FROM photo_rendition JOIN blob ON blob.id = blob_id
+		WHERE blob_id = '`+blobIDOf("R", "x")+`' ORDER BY photo_id, name`,
+		"aaaaaaaaaaaa|1024.webp|derived/aa/aaaaaaaaaaaa/1024.webp",
+		"aaaaaaaaaaaa|2048.webp|derived/aa/aaaaaaaaaaaa/1024.webp",
+		"bbbbbbbbbbbb|og.jpg|derived/aa/aaaaaaaaaaaa/1024.webp")
+	rowsAre(t, db, `SELECT count(*) FROM blob WHERE id LIKE 'R%'`, "8")
+	rowsAre(t, db, `SELECT count(*) FROM photo_rendition`, "10")
+	warningsAre(t, report)
+
+	if report.Renditions != 10 {
+		t.Errorf("report: %+v", report)
+	}
 }
 
 // notRendered checks that a photo whose renditions have been spoiled in
@@ -504,7 +546,7 @@ func notRendered(t *testing.T, desc string, wantRenditions string, wantWarnings 
 
 		rowsAre(t, db, `SELECT photo_id, count(*) FROM photo_rendition GROUP BY photo_id ORDER BY photo_id`,
 			"aaaaaaaaaaaa|5", wantRenditions)
-		rowsAre(t, db, `SELECT count(*) = (SELECT count(*) FROM photo_rendition) FROM rendition`, "1")
+		rowsAre(t, db, `SELECT count(*) = (SELECT count(*) FROM photo_rendition) FROM blob WHERE id LIKE 'R%'`, "1")
 		warningsAre(t, report, wantWarnings...)
 	})
 }
@@ -531,7 +573,7 @@ func TestNoManifest(t *testing.T) {
 	l.manifest = nil
 	db, report := l.migrated()
 
-	rowsAre(t, db, `SELECT count(*) FROM rendition`, "0")
+	rowsAre(t, db, `SELECT count(*) FROM photo_rendition`, "0")
 	warningsAre(t, report, "there is no derived/manifest.json, so no renditions are recorded")
 }
 
