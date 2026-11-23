@@ -1,7 +1,8 @@
 // Package server serves a jiggle database over JMAP (RFC 8620), by way of
 // Gizmo: the session resource, the API endpoint, the event source, and the
 // download of originals and renditions as blobs.  The object types are Photo
-// and Album; see doc/types.md.
+// and Album; see doc/types.md.  It serves the editor, too, which is a client
+// of all that.
 package server
 
 import (
@@ -55,6 +56,10 @@ type Config struct {
 	// can.
 	ImageWorkers int
 	VideoWorkers int
+
+	// EditorDir, if set, is a copy of this repository's share directory to
+	// serve the editor's files from, in place of the ones built in.
+	EditorDir string
 
 	// Now is the clock, time.Now if nil.
 	Now func() time.Time
@@ -165,7 +170,7 @@ func (s *Server) Handler() http.Handler {
 		p.Register(name, Capability, auth.ForAccount(find, method))
 	}
 
-	return sameOriginOnly(auth.Loopback(s.dir, httpd.New(httpd.Config{
+	api := auth.Loopback(s.dir, httpd.New(httpd.Config{
 		BaseURL:   s.cfg.BaseURL,
 		Processor: p,
 		Directory: s.dir,
@@ -184,7 +189,8 @@ func (s *Server) Handler() http.Handler {
 		Capabilities: map[string]any{Capability: map[string]any{}},
 		Blobs:        s,
 		Logger:       s.cfg.Log,
-	})))
+	}))
+	return sameOriginOnly(s.withEditor(api))
 }
 
 // txn is a transaction on the database, of the kind Gizmo's state kit

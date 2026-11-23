@@ -22,8 +22,9 @@
   pipe it into `tail` in an `&&` chain: the pipeline's status is `tail`'s,
   so failing tests would commit, and then publish.
 - Tests that need vips, ffmpeg, exiftool or Pagefind skip without them, so
-  a pass doesn't prove the tools work; read the skips.  The browser test
-  runs only with `JIGGLE_PLAYWRIGHT` set.
+  a pass doesn't prove the tools work; read the skips.  The browser tests
+  run only with `JIGGLE_PLAYWRIGHT` set; the one for the Go server's editor
+  needs Go and node as well.
 
 ## Running on Debian 13
 

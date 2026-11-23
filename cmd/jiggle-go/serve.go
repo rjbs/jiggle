@@ -32,6 +32,7 @@ func runServe(ctx context.Context, args []string) error {
 	tailnetState := fs.String("tailnet-state", "", "the directory the tailnet node keeps its state in; never copy it to another machine")
 	tailnetHTTP := fs.Bool("tailnet-http", false, "serve the tailnet in plain HTTP on port 80, not HTTPS on 443")
 	tailnetVerbose := fs.Bool("tailnet-verbose", false, "log everything tsnet says")
+	editorDir := fs.String("editor-dir", "", "serve the editor from this copy of the repository's share directory, not the one built in")
 	var allow listFlag
 	fs.Var(&allow, "allow", "a tailnet login allowed in, like someone@github; repeatable, and needed with --tailnet")
 	parse(fs, args, "db", "library")
@@ -50,7 +51,7 @@ func runServe(ctx context.Context, args []string) error {
 	defer s.Close()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	srv, err := server.New(server.Config{Store: s, Library: *library, BaseURL: *baseURL, Log: logger})
+	srv, err := server.New(server.Config{Store: s, Library: *library, BaseURL: *baseURL, EditorDir: *editorDir, Log: logger})
 	if err != nil {
 		return err
 	}

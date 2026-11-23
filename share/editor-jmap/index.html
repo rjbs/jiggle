@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jiggle editor</title>
+  <link rel="stylesheet" href="/editor/editor.css">
+</head>
+<body>
+  <header id="bar">
+    <h1>jiggle</h1>
+    <button id="albums" type="button">Albums</button>
+    <form id="query-form">
+      <input id="query" type="search" spellcheck="false" autocomplete="off"
+        placeholder="pending  private  album:SLUG  tag:TAG  year:YYYY  id:ID  limit:N">
+    </form>
+    <button id="refresh" type="button" title="run the query again, once everything is written">Refresh</button>
+    <span id="status"></span>
+    <span id="waiting"></span>
+    <button id="write" class="primary" type="button" disabled title="⌘S">Write changes</button>
+  </header>
+  <aside id="sidebar"></aside>
+  <main id="sheet" tabindex="-1"></main>
+  <div id="box" hidden></div>
+  <script type="module" src="/editor/editor.mjs"></script>
+</body>
+</html>

@@ -32,6 +32,13 @@ type fixture struct {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
+	return newFixtureWith(t, func(*Config) {})
+}
+
+// newFixtureWith makes a fixture whose server is configured as usual, and
+// then as configure says.
+func newFixtureWith(t *testing.T, configure func(*Config)) *fixture {
+	t.Helper()
 	dir := t.TempDir()
 	s, err := store.Create(filepath.Join(dir, "jiggle.sqlite"))
 	if err != nil {
@@ -39,11 +46,13 @@ func newFixture(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { s.Close() })
 
-	srv, err := New(Config{
+	cfg := Config{
 		Store: s, Library: dir,
 		Now: func() time.Time { return time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC) },
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
+	}
+	configure(&cfg)
+	srv, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

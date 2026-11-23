@@ -2,8 +2,9 @@ package Jiggle::TestGo;
 use v5.36;
 
 use Exporter 'import';
-our @EXPORT = qw( go_or_skip jiggle_go library_to_migrate scratch_file );
+our @EXPORT = qw( go_or_skip jiggle_go jiggle_go_serving library_to_migrate scratch_file );
 
+use IO::Socket::INET ();
 use Jiggle::TestLibrary;
 use Path::Tiny ();
 use Test::More ();
@@ -74,6 +75,43 @@ sub jiggle_go (@args) {
   waitpid $pid, 0;
 
   return ($? >> 8, $out->slurp_utf8);
+}
+
+=func jiggle_go_serving
+
+  my $url = jiggle_go_serving($db, $root);
+
+This starts C<jiggle-go serve> on the database and library given, on a port
+of this machine that nothing else is using, and returns its URL once it's
+answering.  The server is stopped when the test ends.
+
+=cut
+
+my @SERVERS;
+END { kill TERM => @SERVERS if @SERVERS }
+
+sub jiggle_go_serving ($db, $root) {
+  my $port = do {
+    my $socket = IO::Socket::INET->new(Listen => 1, LocalAddr => '127.0.0.1', LocalPort => 0)
+      or die "can't find a port: $!";
+    $socket->sockport;
+  };
+
+  my $log = scratch_file('serve', 'log');
+  my $pid = fork // die "can't fork: $!";
+  unless ($pid) {
+    open STDOUT, '>', "$log" or die "can't write $log: $!";
+    open STDERR, '>&', \*STDOUT or die "can't dup: $!";
+    exec "$GO", 'serve', '--db', "$db", '--library', "$root", '--listen', "127.0.0.1:$port"
+      or die "can't run $GO: $!";
+  }
+  push @SERVERS, $pid;
+
+  for (1 .. 100) {
+    return "http://127.0.0.1:$port" if IO::Socket::INET->new(PeerAddr => '127.0.0.1', PeerPort => $port);
+    select undef, undef, undef, 0.1;
+  }
+  Test::More::BAIL_OUT("jiggle-go serve never answered: " . $log->slurp_utf8);
 }
 
 =func library_to_migrate
