@@ -4,9 +4,9 @@ go 1.27.3
 
 require (
 	github.com/rjbs/gizmo v0.1.4
+	github.com/rjbs/gizmo/tailnet v0.1.0
 	github.com/yuin/goldmark v1.8.7
 	golang.org/x/text v0.44.0
-	tailscale.com v1.104.4
 )
 
 require (
@@ -61,4 +61,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 	modernc.org/sqlite v1.61.0 // indirect
+	tailscale.com v1.104.4 // indirect
 )

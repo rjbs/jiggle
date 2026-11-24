@@ -165,6 +165,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/rjbs/gizmo v0.1.4 h1:RY+Ic9WwkwqH8kQjfOqzvHyzBFqM1S66PVUZOaXqZnI=
 github.com/rjbs/gizmo v0.1.4/go.mod h1:LIlQYCAV+yFty+Vyzo2hTER0rV1UNEuGFPY3mUnHRCc=
+github.com/rjbs/gizmo/tailnet v0.1.0 h1:4omsUcWqvHy9p0eE2e6t8ayQwx0/IofetwbErciYevA=
+github.com/rjbs/gizmo/tailnet v0.1.0/go.mod h1:zWo6DE6eWOZ8CXDxRVO/e4vMyDXAHBmr86eA25UGiEY=
 github.com/rogpeppe/go-internal v1.16.0 h1:O9DK+vNMDVGLr2BeZqmpLeMjiMNkuXfcqntWbZV6S5g=
 github.com/rogpeppe/go-internal v1.16.0/go.mod h1:DrUVZyrJU+txYW5/1kwtXQSMFio52ZOxX7yM1VHvnxs=
 github.com/safchain/ethtool v0.7.0 h1:rlJzfDetsVvT61uz8x1YIcFn12akMfuPulHtZjtb7Is=
