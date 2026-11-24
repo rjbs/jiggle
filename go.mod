@@ -3,10 +3,8 @@ module github.com/rjbs/jiggle
 go 1.27.3
 
 require (
-	github.com/BurntSushi/toml v1.6.0
 	github.com/rjbs/gizmo v0.1.0
 	github.com/yuin/goldmark v1.8.7
-	golang.org/x/net v0.63.0
 	golang.org/x/text v0.44.0
 	tailscale.com v1.104.4
 )
@@ -50,6 +48,7 @@ require (
 	go4.org/netipx v0.0.0-20260823151212-3075585bcbeb // indirect
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
+	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect

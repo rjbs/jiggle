@@ -11,8 +11,7 @@ half updated.  Build again first.
 
 ## Where to
 
-The database's `setting` table says, in rows that `migrate` makes from the
-`[publish]` tables of `jiggle.toml`:
+The database's `setting` table says:
 
 | Setting | |
 |---|---|

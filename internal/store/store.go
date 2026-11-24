@@ -38,9 +38,9 @@ const (
 // have run.  Never edit an entry once it has been applied to a database
 // worth keeping; append a new one.
 //
-// Until cutover there is no such database: every one is made from scratch
-// by migrate, so until then the first entry is edited freely, and is the
-// whole schema.  -- claude, 2026-11-22
+// There is such a database now.  The first entry is the whole schema as it
+// was when the first library was brought over from Perl jiggle's TOML
+// files, on 2026-11-23.  -- claude, 2026-11-23
 var migrations = []string{
 	`
 -- What jiggle.toml held, of the site's own settings: title, base_url,
