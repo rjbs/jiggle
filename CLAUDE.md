@@ -1,7 +1,8 @@
 # Working on jiggle
 
-`README.md` says what jiggle is, and `doc/` describes it: start with
-`doc/library.md` and `doc/types.md`.
+`README.md` says what jiggle is, `PLAN.md` is the design and the reasons
+for it, and `doc/` describes what's built: start with `doc/library.md` and
+`doc/types.md`.  When a decision in `PLAN.md` changes, change it there.
 
 jiggle is one Go program, `jiggle-go`.  It was a Perl program first, which
 kept a library as TOML files; that was deleted on 2026-11-23, and is in

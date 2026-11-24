@@ -22,6 +22,7 @@ It is one program, `jiggle-go`, with these parts:
 
 ## Documentation
 
+- [PLAN.md](PLAN.md): the design, and the reasons for it
 - [doc/library.md](doc/library.md): what a library is on disk
 - [doc/types.md](doc/types.md): the JMAP types and methods, Photo and Album
 - [doc/ingest.md](doc/ingest.md): adding photos
