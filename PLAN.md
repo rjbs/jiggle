@@ -77,7 +77,7 @@ Every derivative is:
 **Freshness:** each of a photo's renditions records the original, the
 recipe version and the rotation that produced it.  Changing a photo's
 `rotate` makes its renditions again.  Making them again across the library
-when a recipe's version changes isn't built yet (#24).
+when a recipe's version changes isn't built yet (#30).
 
 **Video** (#3): the original is kept.  A poster frame (`poster.png`, taken
 about a second in, and never published) is extracted with ffmpeg, and the
@@ -376,6 +376,8 @@ the Perl program and since deleted with it.  What it left in the database:
 * `fsck`: photos without an original, originals without a photo, SHA-256
   mismatches (bit rot or a bad copy), photos with no date
 * history and undo (#23), and export (#29)
+* removing blobs that nothing uses (#31), and uploads that can be resumed
+  (#32)
 * the blog plugin, `{% photo <id> %}`.
   The blog builds in GitHub Actions, so the plugin will likely read a
   manifest from the published site.

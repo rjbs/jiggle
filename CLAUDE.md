@@ -14,7 +14,7 @@ what they are: a page that comes out differently is uploaded again.
 
 - **Major work is GitHub issues** on rjbs/jiggle.  #20 was the move from
   the Perl program to a JMAP server in Go, with its parts as sub-issues
-  (#21–#29).
+  (#21–#28).  It's done, and closed.
 - **Small deferred things are Loose Threads** (`lt`).  When a thread grows
   into major work, or an issue covers it, close the thread with a note
   pointing at the issue.

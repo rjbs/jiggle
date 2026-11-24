@@ -29,13 +29,13 @@ two digits of that digest.
 - `originals/incoming/` and `renditions/making/` hold files while they
   arrive or are made.  Nothing removes what a killed server leaves there.
 
-Nothing yet removes a blob that no photo uses.
+Nothing yet removes a blob that no photo uses (#31).
 
 ## What can't be made again
 
 The database and `originals/`.  See [backup.md](backup.md).  Renditions
 can be made again from the originals, though nothing does that for a whole
-library yet.
+library yet (#30).
 
 If the site is synced to Bunny, the record of what was uploaded can't be
 made again either, short of uploading the whole site; see

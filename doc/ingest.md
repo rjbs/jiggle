@@ -39,7 +39,7 @@ and tries the import first; only when the server answers `blobNotFound`
 does it upload.  Ingesting a whole card again, or again after an
 interruption, sends only what's new.
 
-An upload is one POST, and can't be resumed.  A large video interrupted
+An upload is one POST, and can't be resumed (#32).  A large video interrupted
 partway starts over.
 
 ## Waiting
