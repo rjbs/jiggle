@@ -58,16 +58,3 @@ earlier syncs put there.  Only one machine should sync a site.
   what it did.  Sync again to finish.
 - A site with no manifest is refused.  It isn't taken for an empty site,
   which would mean deleting everything.
-
-This is the same record, in the same format, that Perl jiggle's `jiggle
-sync` keeps in `.jiggle/bunny-uploaded.json`, and the Go build writes the
-manifest that Perl's does.  So a site built by `jiggle-go build` into the
-library's `site/` can be synced against Perl's record:
-
-    jiggle-go sync --db jiggle.sqlite --site LIBRARY/site \
-      --manifest LIBRARY/.jiggle/site-manifest.json \
-      --record LIBRARY/.jiggle/bunny-uploaded.json --dry-run
-
-The first such sync uploads a few pictures that it needn't: where two
-renditions are the same bytes, the Go build links both from one file, and
-the manifest says so.
