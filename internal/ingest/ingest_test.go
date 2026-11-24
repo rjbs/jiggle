@@ -215,7 +215,7 @@ func TestIngestWhatWasUploadedAlready(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	if _, err := w.in.Client.Upload(context.Background(), f, int64(len(w.read(a)))); err != nil {
+	if _, err := w.in.Client.Upload(context.Background(), "application/octet-stream", f, int64(len(w.read(a)))); err != nil {
 		t.Fatal(err)
 	}
 

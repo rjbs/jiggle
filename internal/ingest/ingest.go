@@ -162,9 +162,11 @@ func (in *Ingest) file(ctx context.Context, f *File) error {
 	}
 	// The server says what the blob is, in case it should ever name
 	// blobs some other way.
-	if photo["blobId"], err = in.Client.Upload(ctx, source, info.Size()); err != nil {
+	up, err := in.Client.Upload(ctx, "application/octet-stream", source, info.Size())
+	if err != nil {
 		return fmt.Errorf("uploading: %w", err)
 	}
+	photo["blobId"] = up.BlobID
 	f.Uploaded = true
 	if refused, err = in.imports(ctx, f, photo); err == nil && refused == "blobNotFound" {
 		err = fmt.Errorf("the server lost the upload: %s", f.Reason)
