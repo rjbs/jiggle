@@ -3,7 +3,7 @@ module github.com/rjbs/jiggle
 go 1.27.3
 
 require (
-	github.com/rjbs/gizmo v0.1.1
+	github.com/rjbs/gizmo v0.1.2
 	github.com/yuin/goldmark v1.8.7
 	golang.org/x/text v0.44.0
 	tailscale.com v1.104.4
