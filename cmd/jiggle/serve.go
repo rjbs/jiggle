@@ -11,9 +11,10 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rjbs/gizmo/tailnet"
+
 	"github.com/rjbs/jiggle/internal/server"
 	"github.com/rjbs/jiggle/internal/store"
-	"github.com/rjbs/jiggle/internal/tailnet"
 )
 
 // listFlag collects a repeatable string flag.
@@ -71,7 +72,7 @@ func runServe(ctx context.Context, args []string) error {
 	}
 
 	if *tailnetName != "" {
-		node, err := tailnet.Start(ctx, *tailnetName, *tailnetState, logger, *tailnetVerbose)
+		node, err := tailnet.Start(ctx, tailnet.Config{Hostname: *tailnetName, Dir: *tailnetState, Logger: logger, Verbose: *tailnetVerbose})
 		if err != nil {
 			return fmt.Errorf("joining the tailnet: %w", err)
 		}
@@ -81,8 +82,8 @@ func runServe(ctx context.Context, args []string) error {
 			return fmt.Errorf("listening on the tailnet: %w", err)
 		}
 		logger.Info("serving", "db", *dbPath, "url", node.URL(!*tailnetHTTP)+"/", "to", allow.String())
-		srv.Guard().AllowHost(*tailnetName, node.DNSName)
-		guarded := tailnet.RequireLogin(node.WhoIs, allow, logger, handler)
+		srv.Guard().AllowHost(node.Names()...)
+		guarded := node.RequireLogin(allow, handler)
 		go func() { failed <- http.Serve(ln, guarded) }()
 	}
 
