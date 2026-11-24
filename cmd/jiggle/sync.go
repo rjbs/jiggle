@@ -69,7 +69,7 @@ func runSync(ctx context.Context, args []string) error {
 	}
 
 	if info, err := os.Stat(*site); err != nil || !info.IsDir() {
-		return fmt.Errorf("no site at %s; run jiggle-go build first", *site)
+		return fmt.Errorf("no site at %s; run jiggle build first", *site)
 	}
 	if _, err := os.Stat(*manifest + ".building"); err == nil {
 		return errors.New("the last build didn't finish, so the site may be half updated; build again first")

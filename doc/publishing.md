@@ -1,7 +1,7 @@
 # Publishing the site
 
-    jiggle-go build --db jiggle.sqlite --library DIR --out SITE
-    jiggle-go sync  --db jiggle.sqlite --site SITE [--to rsync|bunny] [--dry-run] [--purge-all]
+    jiggle build --db jiggle.sqlite --library DIR --out SITE
+    jiggle sync  --db jiggle.sqlite --site SITE [--to rsync|bunny] [--dry-run] [--purge-all]
 
 `sync` copies a built site to where it's served from.  Nothing syncs by
 itself: a build is the last look at the site before it's public.

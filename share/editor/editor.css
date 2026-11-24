@@ -239,7 +239,7 @@ button.primary:not(:disabled) { background: var(--accent); border-color: var(--a
 #sidebar .row.quick { display: flex; gap: 6px; flex-wrap: wrap; }
 #sidebar .row.quick button { font: 12px ui-monospace, Menlo, monospace; padding: 3px 8px; }
 
-/* For the editor that jiggle-go serves. */
+/* For the editor that jiggle serves. */
 #waiting { color: var(--muted); }
 #waiting.bad, .facts .bad { color: var(--bad); }
 .thumb .badges { flex-wrap: wrap; }

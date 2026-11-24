@@ -1,6 +1,6 @@
 # The JMAP types
 
-`jiggle-go serve` serves a library's database over JMAP ([RFC 8620][rfc]),
+`jiggle serve` serves a library's database over JMAP ([RFC 8620][rfc]),
 by way of [Gizmo](https://github.com/rjbs/gizmo).  There is one account,
 `photos`, and one capability, `https://semiotic.systems/jmap/jiggle`, with
 two types under it: Photo and Album.  Each has `/get`, `/changes`, `/set`

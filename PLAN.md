@@ -100,7 +100,7 @@ Video pages use `<video>` with the 2048 rendition as its poster, plus
 
 ## Building the site
 
-`jiggle-go build` renders the whole site every time.  HTML is cheap; 12,000
+`jiggle build` renders the whole site every time.  HTML is cheap; 12,000
 pages take seconds.  Two rules keep the sync small:
 
 * **write-if-changed:** a file is written only if its bytes differ, so
@@ -211,7 +211,7 @@ rendition, as an absolute URL), and `og:url`.
 
 ## Syncing
 
-`jiggle-go sync` publishes the site to one of two kinds of target, set in
+`jiggle sync` publishes the site to one of two kinds of target, set in
 the database (see `doc/publishing.md`):
 
 * a web server, by `rsync`, which skips unchanged files by size and mtime
@@ -241,7 +241,7 @@ stylesheet change is one upload, not a change to every page.
 
 ## Ingest
 
-`jiggle-go ingest <dir>` uploads each file to the server and imports it
+`jiggle ingest <dir>` uploads each file to the server and imports it
 (#28; see `doc/ingest.md`).  The server keeps the original, reads its facts
 (date, offset, GPS, dimensions), and makes its derivatives.
 
@@ -263,7 +263,7 @@ editor.
 ## The editor
 
 The editor is the replacement for Flickr's Uploadr (#10, #27): a web page,
-served by `jiggle-go serve`, for the part Finder is bad at, like selecting a
+served by `jiggle serve`, for the part Finder is bad at, like selecting a
 dozen photos, tagging them, and adding them to an album.  It is a JMAP
 client like any other, and everything it does, another client could.  The
 workflow is: select a batch, view and edit it, and write the changes, as
@@ -347,7 +347,7 @@ stops a page that has rebound its own name to the server's address.
 Nothing authenticates a request on the plain listener, which is why it
 listens on localhost alone by default.
 
-**The import helper** is `jiggle-go ingest DIR`, which ends by giving the
+**The import helper** is `jiggle ingest DIR`, which ends by giving the
 editor's URL for everything pending.  The usual source is a directory filled
 by Image Capture from the phone and pruned by hand, so still photos (JPEG
 today, since the phone is in compatibility mode; perhaps HEIC later) and

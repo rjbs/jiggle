@@ -3,7 +3,7 @@
 jiggle keeps a library of photos and short videos, and publishes it as a
 static web site.  It was written to replace Flickr.
 
-It is one program, `jiggle-go`, with these parts:
+It is one program, `jiggle`, written in Go, with these parts:
 
 - **`serve`** serves the library over JMAP, and serves an editor, which is
   a web page and a JMAP client like any other.  The library is a SQLite
@@ -15,9 +15,9 @@ It is one program, `jiggle-go`, with these parts:
   server by rsync, sending only what changed.
 - **`backup`** makes a safe copy of the database.
 
-`jiggle-go COMMAND -h` lists a command's options.
+`jiggle COMMAND -h` lists a command's options.
 
-    make install    # builds jiggle-go into ~/bin
+    make install    # builds jiggle into ~/bin
     make test
 
 ## Documentation
@@ -52,4 +52,5 @@ jiggle was first a Perl program that kept a library as TOML files, one for
 each photo, and built the site on a laptop.  The one library there was
 moved to the database on 2026-11-23, and the Perl program and the tool
 that moved the library were then deleted.  They are in this repository's
-history, before the commit "Delete Perl jiggle".
+history, before the commit "Delete Perl jiggle".  Until then the Go
+program was called `jiggle-go`.

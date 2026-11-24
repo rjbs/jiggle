@@ -772,7 +772,7 @@ func (b *Bunny) purge(ctx context.Context, changed []string) (int, error) {
 		return b.purgeRequest(ctx, b.APIURL+"/purge?"+query.Encode())
 	})
 	if len(failed) > 0 {
-		return len(urls) - len(failed), fmt.Errorf("%d purge(s) failed; purge the pull zone by hand (jiggle-go sync --purge-all), "+
+		return len(urls) - len(failed), fmt.Errorf("%d purge(s) failed; purge the pull zone by hand (jiggle sync --purge-all), "+
 			"or the CDN may serve stale or removed files:\n  %s", len(failed), strings.Join(failed, "\n  "))
 	}
 	b.Log(fmt.Sprintf("purged %d prefix(es) and %d URL(s)", len(prefix)*len(hosts), len(exact)*len(hosts)))

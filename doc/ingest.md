@@ -1,8 +1,8 @@
 # Adding photos
 
-    jiggle-go ingest [--url URL] [--no-wait] [--discard-failed] FILE-OR-DIR...
+    jiggle ingest [--url URL] [--no-wait] [--discard-failed] FILE-OR-DIR...
 
-`ingest` is a client of a running `jiggle-go serve`: it uploads files and
+`ingest` is a client of a running `jiggle serve`: it uploads files and
 calls `Photo/import` (see [types.md](types.md)), as any other client could.
 It needs nothing but the server's URL, so it can run on another machine.
 

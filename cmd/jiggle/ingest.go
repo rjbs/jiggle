@@ -16,11 +16,11 @@ import (
 // directories whose files are meant.
 //
 // The server is found at --url, or at JIGGLE_URL in the environment, or
-// where jiggle-go serve listens if it's told nothing.
+// where jiggle serve listens if it's told nothing.
 func runIngest(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("ingest", flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "usage: jiggle-go ingest [options] FILE-OR-DIR...")
+		fmt.Fprintln(fs.Output(), "usage: jiggle ingest [options] FILE-OR-DIR...")
 		fs.PrintDefaults()
 	}
 	at := os.Getenv("JIGGLE_URL")

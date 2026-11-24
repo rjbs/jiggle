@@ -1,11 +1,11 @@
 # Backing up a library
 
-A library served by `jiggle-go serve` is two things that can't be made
+A library served by `jiggle serve` is two things that can't be made
 again: the database, and the originals.
 
 ## The database
 
-    jiggle-go backup --db jiggle.sqlite --to DIR [--keep N]
+    jiggle backup --db jiggle.sqlite --to DIR [--keep N]
 
 writes `DIR/jiggle-YYYYMMDDTHHMMSSZ.sqlite`, named for the time in UTC, and
 prints its path.  It's safe while the server is running, and the backup is

@@ -4,7 +4,7 @@
 for it, and `doc/` describes what's built: start with `doc/library.md` and
 `doc/types.md`.  When a decision in `PLAN.md` changes, change it there.
 
-jiggle is one Go program, `jiggle-go`.  It was a Perl program first, which
+jiggle is one Go program.  It was a Perl program first, which
 kept a library as TOML files; that was deleted on 2026-11-23, and is in
 the history before the commit "Delete Perl jiggle".  Comments that say
 something is done "as Perl jiggle did" explain why the site's bytes are
@@ -61,7 +61,7 @@ It isn't in this repository; ask where it is.
 
 - **Treat it as read-only** unless asked to change it.  To try something,
   make a library in a temporary directory, as the tests do.
-- **Never stop a server by name**, as with `pkill jiggle-go`: the real one
+- **Never stop a server by name**, as with `pkill jiggle`: the real one
   may be running.  Stop the one you started, by its process id.
 - Only one machine syncs the site to Bunny, and the record of what it
   uploaded can't be made again; see `doc/publishing.md`.
