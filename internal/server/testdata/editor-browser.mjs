@@ -1,7 +1,7 @@
 // Drives the page of the editor that jiggle-go serves through a fixed
-// script, printing what it saw as one JSON object, for
-// t/editor-jmap-browser.t to check.  Playwright is loaded from the directory
-// named by JIGGLE_PLAYWRIGHT.  -- claude, 2026-11-23
+// script, printing what it saw as one JSON object, for TestEditorInABrowser
+// to check.  Playwright is loaded from the directory named by
+// JIGGLE_PLAYWRIGHT.  -- claude, 2026-11-23
 //
 // Its arguments are the server's URL and, if there is one, the id of a
 // photo with a real picture, whose renditions can be made again.

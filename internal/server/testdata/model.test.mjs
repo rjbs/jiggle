@@ -1,12 +1,12 @@
 // Tests of the editor's model: what a query means, and what's asked of the
-// server to make edits real.  Run by t/editor-jmap.t, with node's own test
-// runner.  -- claude, 2026-11-23
+// server to make edits real.  Run by go test (see editor_node_test.go),
+// with node's own test runner.  -- claude, 2026-11-23
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
   albumWrites, batchQuery, contested, parseQuery, photoPatch, pickBatch, rebaseSet, uniqueSlug, wholeAlbum,
-} from "../../share/editor-jmap/model.mjs";
+} from "../../../share/editor-jmap/model.mjs";
 
 // The albums these tests know: slug => id.
 const ALBUM_IDS = { trip: "A1", cats: "A2" };
