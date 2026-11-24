@@ -73,6 +73,7 @@ type Server struct {
 	store  *store.Store
 	dir    *auth.Directory
 	broker *push.Broker
+	guard  *httpd.Guard
 
 	// wake is sent to when there may be imports to work on.
 	wake chan struct{}
@@ -120,7 +121,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 
-	s := &Server{cfg: cfg, store: cfg.Store, dir: dir, broker: push.NewBroker(), wake: make(chan struct{}, 1)}
+	s := &Server{cfg: cfg, store: cfg.Store, dir: dir, broker: push.NewBroker(), guard: httpd.NewGuard(), wake: make(chan struct{}, 1)}
 
 	// The broker is told the states as they stand, so that the first
 	// change published is taken for the one change it is, and not for a
@@ -148,6 +149,16 @@ func (s *Server) States(ctx context.Context) (map[string]string, error) {
 func (s *Server) Watch(ctx context.Context) {
 	push.Watch(ctx, s.broker, s.cfg.AccountID, s.cfg.PushPollInterval, s.States)
 }
+
+// Guard is what keeps browsers from being used against the server.  Who
+// may use the server is decided by where a request comes from: this
+// machine, or a node of the tailnet that someone allowed is logged in to.
+// A web browser there will send requests for any page that asks it to, so
+// the Guard refuses requests that a page from somewhere else has a browser
+// make, and requests addressed to a name that isn't the server's.  The
+// Handler is guarded already; the Guard is here to be told the server's
+// names, apart from the one in BaseURL.
+func (s *Server) Guard() *httpd.Guard { return s.guard }
 
 // Handler returns the server's HTTP handler.  Every request it is given
 // acts as the server's one user; whoever lets requests in decides who may
@@ -181,6 +192,7 @@ func (s *Server) Handler() http.Handler {
 			return nil
 		},
 		Broker: s.broker,
+		Guard:  s.guard,
 		Limits: jmap.Limits{
 			MaxObjectsInGet: limits.MaxObjectsInGet,
 			MaxObjectsInSet: limits.MaxObjectsInSet,
@@ -190,7 +202,8 @@ func (s *Server) Handler() http.Handler {
 		Blobs:        s,
 		Logger:       s.cfg.Log,
 	}))
-	return sameOriginOnly(s.withEditor(api))
+	// The editor is guarded along with the API, which guards itself.
+	return s.guard.Handler(s.withEditor(api))
 }
 
 // txn is a transaction on the database, of the kind Gizmo's state kit
