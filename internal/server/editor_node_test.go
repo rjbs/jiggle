@@ -26,7 +26,7 @@ func needsNode(t *testing.T) {
 	}
 }
 
-// The editor's model, share/editor-jmap/model.mjs, is tested by
+// The editor's model, share/editor/model.mjs, is tested by
 // testdata/model.test.mjs.
 func TestEditorModel(t *testing.T) {
 	needsNode(t)

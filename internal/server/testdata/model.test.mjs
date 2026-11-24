@@ -6,7 +6,7 @@ import { test } from "node:test";
 
 import {
   albumWrites, batchQuery, contested, parseQuery, photoPatch, pickBatch, rebaseSet, uniqueSlug, wholeAlbum,
-} from "../../../share/editor-jmap/model.mjs";
+} from "../../../share/editor/model.mjs";
 
 // The albums these tests know: slug => id.
 const ALBUM_IDS = { trip: "A1", cats: "A2" };

@@ -16,8 +16,11 @@
 // uses.  Albums are made from the published photos, and an album of nothing
 // but unlisted photos is itself unlisted.
 //
-// This is a port of Perl jiggle's Jiggle::Site, and until that is retired
-// the two are meant to build the same site from the same library.
+// This is a port of Perl jiggle's Jiggle::Site, which built the site
+// before it, and it was made to build the same site from the same library,
+// byte for byte.  Where something here is done in an odd way to agree with
+// Perl, that is why: a page that comes out differently is a page uploaded
+// again.
 package site
 
 import (

@@ -54,7 +54,7 @@ func TestEditorFilesAreAllServed(t *testing.T) {
 			t.Errorf("the editor serves %s, and there is no such file", name)
 		}
 	}
-	entries, err := os.ReadDir(filepath.Join("..", "..", "share", "editor-jmap"))
+	entries, err := os.ReadDir(filepath.Join("..", "..", "share", "editor"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestEditorFilesAreAllServed(t *testing.T) {
 		served[name] = true
 	}
 	for _, entry := range entries {
-		if name := "editor-jmap/" + entry.Name(); !served[name] {
+		if name := "editor/" + entry.Name(); !served[name] {
 			t.Errorf("share/%s is not served", name)
 		}
 	}
@@ -71,7 +71,7 @@ func TestEditorFilesAreAllServed(t *testing.T) {
 
 func TestEditorDir(t *testing.T) {
 	dir := t.TempDir()
-	for name, content := range map[string]string{"editor-jmap/index.html": "<p>a page being worked on"} {
+	for name, content := range map[string]string{"editor/index.html": "<p>a page being worked on"} {
 		path := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)

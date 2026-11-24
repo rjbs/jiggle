@@ -1,5 +1,5 @@
-// Command jiggle-go is jiggle's server and its tools, written in Go.  It
-// has this name until it takes over from Perl jiggle, and then it is jiggle.
+// Command jiggle-go is jiggle: its server and its tools.  It has this name
+// from when there was a jiggle written in Perl beside it.
 //
 //	jiggle-go build --db FILE --library DIR --out DIR [--no-search] [--verify]
 //	jiggle-go serve --db FILE --library DIR [--listen ADDR] [--tailnet NAME ...]

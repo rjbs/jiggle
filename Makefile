@@ -1,5 +1,3 @@
-# For the Go half of jiggle.  Perl jiggle is built by Dist::Zilla; see dist.ini.
-
 BINDIR ?= $(HOME)/bin
 
 .PHONY: install

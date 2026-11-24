@@ -11,11 +11,11 @@ import (
 // editorFiles are the editor's files, by the path each is served at, as
 // paths in share.Editor.  The page itself is served at /.
 var editorFiles = map[string]string{
-	"/{$}":               "editor-jmap/index.html",
-	"/editor/editor.css": "editor/static/editor.css",
-	"/editor/editor.mjs": "editor-jmap/editor.mjs",
-	"/editor/jmap.mjs":   "editor-jmap/jmap.mjs",
-	"/editor/model.mjs":  "editor-jmap/model.mjs",
+	"/{$}":               "editor/index.html",
+	"/editor/editor.css": "editor/editor.css",
+	"/editor/editor.mjs": "editor/editor.mjs",
+	"/editor/jmap.mjs":   "editor/jmap.mjs",
+	"/editor/model.mjs":  "editor/model.mjs",
 }
 
 // withEditor serves the editor's page and its files, and gives every other
