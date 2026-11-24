@@ -1,0 +1,11 @@
+{{- /*
+  Each tile is a photo, or an album, which is shown by its cover and links
+  to the album.  A caption, shown over the tile on hover, gives its title
+  and details.  In an album's own grid, photos link to their pages within
+  it.
+*/ -}}
+<ul class="grid">
+{{- range .}}
+  <li class="{{.Class}}" style="--ar: {{.AR}}"><a href="{{.URL}}"><img src="{{.Image}}" width="{{.Width}}" height="{{.Height}}" loading="lazy" alt="{{.Name}}"><span class="caption" aria-hidden="true"><span class="name">{{.Name}}</span><span class="details">{{.Details}}</span></span></a></li>
+{{- end}}
+</ul>

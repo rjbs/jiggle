@@ -1,0 +1,12 @@
+<h1>Albums</h1>
+<ul class="album-list">
+{{- range .Albums}}
+  <li>
+    <a href="{{.URL}}">
+      <img src="{{.Image}}" loading="lazy" alt="">
+      <span class="album-title">{{.Title}}</span>
+      <span class="count">{{.Count}}</span>
+    </a>
+  </li>
+{{- end}}
+</ul>

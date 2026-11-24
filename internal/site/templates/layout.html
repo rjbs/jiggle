@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.PageTitle}}</title>
+<link rel="stylesheet" href="/static/jiggle.css">
+{{- if .NoIndex}}
+<meta name="robots" content="noindex">
+{{- end}}
+{{- if .Canonical}}
+<link rel="canonical" href="{{.Canonical}}">
+{{- end}}
+<link rel="alternate" type="application/atom+xml" href="/feed.xml" {{attr "title" .SiteTitle}}>
+<script src="/static/jiggle-keys.js" defer></script>
+{{- if .Viewer}}
+<script src="/static/jiggle-viewer.js" defer></script>
+{{- end}}
+{{- with .OG}}
+<meta property="og:type" content="{{if .Video}}video.other{{else}}website{{end}}">
+<meta property="og:site_name" {{attr "content" $.SiteTitle}}>
+<meta property="og:title" {{attr "content" .Title}}>
+<meta property="og:url" content="{{.URL}}">
+<meta property="og:image" content="{{.Image}}">
+<meta property="og:image:width" content="{{.Width}}">
+<meta property="og:image:height" content="{{.Height}}">
+{{- with .Video}}
+<meta property="og:video" content="{{.URL}}">
+<meta property="og:video:type" content="video/mp4">
+<meta property="og:video:width" content="{{.Width}}">
+<meta property="og:video:height" content="{{.Height}}">
+{{- end}}
+{{- if .Description}}
+<meta property="og:description" {{attr "content" .Description}}>
+<meta name="description" {{attr "content" .Description}}>
+{{- end}}
+<meta name="twitter:card" content="summary_large_image">
+{{- end}}
+{{- if .Map}}
+<link rel="stylesheet" href="/static/maplibre/maplibre-gl.css">
+<script src="/static/maplibre/maplibre-gl.js"></script>
+<script src="/static/jiggle-map.js"></script>
+{{- end}}
+</head>
+<body>
+<header class="site-header">
+  <a class="site-title" href="/">{{.SiteTitle}}</a>
+  <nav>
+    <a href="/albums/">Albums</a>
+    <a href="/tags/">Tags</a>
+    <a href="/archive/">Archive</a>
+    <a href="/map/">Map</a>
+  </nav>
+  <form class="site-search" action="/search/" method="get" role="search">
+    <input type="search" name="q" placeholder="Search" aria-label="Search photos">
+  </form>
+</header>
+<main>
+{{.Content}}
+</main>
+</body>
+</html>

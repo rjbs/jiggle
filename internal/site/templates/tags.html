@@ -1,0 +1,6 @@
+<h1>Tags</h1>
+<ul class="tag-cloud">
+{{- range .Tags}}
+  <li><a href="{{.URL}}">{{.Name}}</a> <span class="count">{{.Count}}</span></li>
+{{- end}}
+</ul>

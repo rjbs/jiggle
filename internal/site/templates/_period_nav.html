@@ -1,0 +1,8 @@
+<nav class="neighbors">
+{{- with .Earlier}}
+  <a rel="prev" href="{{.URL}}">&larr; {{.Label}}</a>
+{{- end}}
+{{- with .Later}}
+  <a rel="next" href="{{.URL}}">{{.Label}} &rarr;</a>
+{{- end}}
+</nav>
