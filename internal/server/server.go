@@ -81,7 +81,9 @@ type Server struct {
 
 // The most a request may ask for at once.  A library is some tens of
 // thousands of photos, and a client may reasonably want all of them.
-var limits = std.Limits{MaxObjectsInGet: 5000, MaxObjectsInSet: 1000, MaxQueryLimit: 100000}
+// These are what the standard methods keep to, and, with the largest
+// upload, what the session advertises.
+var limits = jmap.Limits{MaxObjectsInGet: 5000, MaxObjectsInSet: 1000, MaxQueryLimit: 100000}
 
 // New returns a Server.
 func New(cfg Config) (*Server, error) {
@@ -113,13 +115,7 @@ func New(cfg Config) (*Server, error) {
 	// One user owns the one account, and is who every request acts as.
 	// Who may make requests at all is decided before they get here, by
 	// the listener.
-	dir, err := auth.NewDirectory(
-		map[string]*auth.User{cfg.Username: {Credentials: []auth.Credential{{Type: auth.CredLoopback}}}},
-		map[string]*auth.Account{cfg.AccountID: {Owner: cfg.Username, Name: cfg.Username}},
-	)
-	if err != nil {
-		return nil, err
-	}
+	dir := auth.Solo(cfg.Username, cfg.AccountID)
 
 	s := &Server{cfg: cfg, store: cfg.Store, dir: dir, broker: push.NewBroker(), guard: httpd.NewGuard(), wake: make(chan struct{}, 1)}
 
@@ -181,6 +177,8 @@ func (s *Server) Handler() http.Handler {
 		p.Register(name, Capability, auth.ForAccount(find, method))
 	}
 
+	advertised := limits
+	advertised.MaxSizeUpload = s.cfg.MaxSizeUpload
 	api := auth.Loopback(s.dir, httpd.New(httpd.Config{
 		BaseURL:   s.cfg.BaseURL,
 		Processor: p,
@@ -193,14 +191,9 @@ func (s *Server) Handler() http.Handler {
 		},
 		Broker: s.broker,
 		Guard:  s.guard,
-		Limits: jmap.Limits{
-			MaxObjectsInGet: limits.MaxObjectsInGet,
-			MaxObjectsInSet: limits.MaxObjectsInSet,
-			MaxSizeUpload:   s.cfg.MaxSizeUpload,
-		},
-		Capabilities: map[string]any{Capability: map[string]any{}},
-		Blobs:        s,
-		Logger:       s.cfg.Log,
+		Limits: advertised,
+		Blobs:  s,
+		Logger: s.cfg.Log,
 	}))
 	// The editor is guarded along with the API, which guards itself.
 	return s.guard.Handler(s.withEditor(api))
