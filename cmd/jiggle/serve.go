@@ -66,8 +66,8 @@ func runServe(ctx context.Context, args []string) error {
 	if *listen != "" {
 		logger.Info("serving", "db", *dbPath, "url", "http://"+*listen+"/")
 		named, _, _ := net.SplitHostPort(*listen)
-		local := server.OnlyHosts([]string{"localhost", named, *baseURL}, handler)
-		go func() { failed <- http.ListenAndServe(*listen, local) }()
+		srv.Guard().AllowHost(named)
+		go func() { failed <- http.ListenAndServe(*listen, handler) }()
 	}
 
 	if *tailnetName != "" {
@@ -81,8 +81,8 @@ func runServe(ctx context.Context, args []string) error {
 			return fmt.Errorf("listening on the tailnet: %w", err)
 		}
 		logger.Info("serving", "db", *dbPath, "url", node.URL(!*tailnetHTTP)+"/", "to", allow.String())
-		named := server.OnlyHosts([]string{*tailnetName, node.DNSName, *baseURL}, handler)
-		guarded := tailnet.RequireLogin(node.WhoIs, allow, logger, named)
+		srv.Guard().AllowHost(*tailnetName, node.DNSName)
+		guarded := tailnet.RequireLogin(node.WhoIs, allow, logger, handler)
 		go func() { failed <- http.Serve(ln, guarded) }()
 	}
 
