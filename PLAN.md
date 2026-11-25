@@ -1,8 +1,8 @@
-# jiggle: a static photo site to replace Flickr
+# Jiggle: a static photo site to replace Flickr
 
 This is the design: what was decided, and why.  It began as the working
 plan for a Perl program that kept a library as TOML files, and what's here
-is the part of that plan that's still true, now that jiggle is a JMAP
+is the part of that plan that's still true, now that Jiggle is a JMAP
 server in Go over a database (#20).  What a library is on disk is in
 `doc/library.md`, and the JMAP types are in `doc/types.md`.  This document
 names those and doesn't repeat them.

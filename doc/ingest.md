@@ -21,7 +21,7 @@ Each file comes to one of these:
   and modification time.
 - **already in the library:** some photo has this exact file as its
   original, or is importing it.
-- **skipped:** it isn't a photo or a video of a kind jiggle can use.  The
+- **skipped:** it isn't a photo or a video of a kind Jiggle can use.  The
   server judges that by the file's content, not its name.
 - **failed to import:** a photo was made, and then the server couldn't
   read the file: it's damaged, say, or it's the motion half of a Live

@@ -60,9 +60,9 @@ location.
 No command makes a new library, or changes a setting.  Settings are
 changed with `sqlite3`.
 
-## A library that began with Perl jiggle
+## A library that began with Perl Jiggle
 
-jiggle once kept a library as files alone, and the one library that was
+Jiggle once kept a library as files alone, and the one library that was
 moved to a database still has that layout around it:
 
 - **Its originals and renditions are where they were**, at

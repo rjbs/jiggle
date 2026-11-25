@@ -1,6 +1,6 @@
-# jiggle
+# Jiggle
 
-jiggle keeps a library of photos and short videos, and publishes it as a
+Jiggle keeps a library of photos and short videos, and publishes it as a
 static web site.  It was written to replace Flickr.
 
 It is one program, `jiggle`, written in Go, with these parts:
@@ -48,7 +48,7 @@ decode HEIC, so photos from an iPhone fail while JPEGs work.
 
 ## History
 
-jiggle was first a Perl program that kept a library as TOML files, one for
+Jiggle was first a Perl program that kept a library as TOML files, one for
 each photo, and built the site on a laptop.  The one library there was
 moved to the database on 2026-11-23, and the Perl program and the tool
 that moved the library were then deleted.  They are in this repository's
