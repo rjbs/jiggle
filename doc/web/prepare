@@ -1,0 +1,32 @@
+#!/usr/bin/env perl
+use v5.36;
+
+# The site publishes doc/types.md and nothing else from doc/.  That file
+# links to its neighbours, which a reader of the site cannot follow, and
+# which a strict build refuses.  This copies it into the site's sources with
+# each such link reduced to its text.  It also sets each property's
+# description on a line of its own.
+#
+#   doc/web/prepare
+
+use FindBin qw($Bin);
+
+my %published = map {; $_ => 1 } qw(types.md);
+
+open my $in,  '<:encoding(UTF-8)', "$Bin/../types.md"
+  or die "can't read doc/types.md: $!";
+open my $out, '>:encoding(UTF-8)', "$Bin/docs/types.md"
+  or die "can't write doc/web/docs/types.md: $!";
+
+my $text = do { local $/; <$in> };
+
+# A link's text may be wrapped across lines; its target is not.
+$text =~ s{\[([^\]]+)\]\(([\w-]+\.md)(?:#[^)]*)?\)}{ $published{$2} ? $& : $1 }ge;
+
+# A property is written as the JMAP specifications write one: its name and
+# type on a line, and its description beginning on the next.  Markdown would
+# run the two together, so end the first line with a hard break.
+$text =~ s{^(\s*- \*\*\w+\*\*: `[^`\n]+`(?: \([^)\n]*\))?)$}{$1  }gm;
+
+print {$out} $text;
+close $out or die "error writing doc/web/docs/types.md: $!";
