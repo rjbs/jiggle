@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds or serves the jiggle site with Zensical, run in Docker so that
+# Builds or serves the Jiggle site with Zensical, run in Docker so that
 # nothing need be installed locally beyond Docker and Perl.
 #
 #   doc/web/build.sh          # builds into doc/web/site/

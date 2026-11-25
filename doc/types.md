@@ -220,7 +220,7 @@ photo may be rejected with any SetError a `/set` gives, or one of these:
 
 - `blobNotFound`: there's no such upload.
 - `invalidPhoto`: the upload isn't a photo or a video, or not of a kind
-  jiggle can use.  That's judged by its content when it's uploaded.
+  Jiggle can use.  That's judged by its content when it's uploaded.
 - `alreadyExists`: the blob is already a photo's original, or being
   imported by one, whose id is `existingId`.
 

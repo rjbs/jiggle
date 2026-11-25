@@ -1,6 +1,6 @@
-site_name: jiggle
+site_name: Jiggle
 site_description: >-
-  jiggle keeps a library of photos and publishes it as a static web site.
+  Jiggle keeps a library of photos and publishes it as a static web site.
   This site documents the JMAP object types it defines.
 site_url: ""
 use_directory_urls: true
