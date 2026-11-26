@@ -2,7 +2,7 @@
 use v5.36;
 
 # The site publishes doc/types.md and nothing else from doc/.  That file
-# links to its neighbours, which a reader of the site cannot follow, and
+# links to its neighbors, which a reader of the site cannot follow, and
 # which a strict build refuses.  This copies it into the site's sources with
 # each such link reduced to its text.  It also sets each property's
 # description on a line of its own.

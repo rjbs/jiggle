@@ -4,7 +4,7 @@
 by way of [Gizmo](https://github.com/rjbs/gizmo).  There is one account,
 `photos`, and one capability, `https://semiotic.systems/jmap/jiggle`, with
 two object types under it: Photo and Album.  Each has the standard `/get`,
-`/changes`, `/query` and `/set` methods, with the differences from the
+`/changes`, `/query`, and `/set` methods, with the differences from the
 standard noted under each type.  Photo also has `/import`.  Neither has
 `/queryChanges`.
 
@@ -31,9 +31,9 @@ A **Photo** is a photo or a video.  It has the following properties:
   The time on the clock when the photo was taken, like
   `2026-07-17T17:23:17`, with a UTC offset (or `Z`) only if one is known.
 - **visibility**: `String`
-  `public`, `unlisted`, `private` or `pending`.
+  `public`, `unlisted`, `private`, or `pending`.
 - **rotate**: `Number`
-  A further turn clockwise, in degrees: 0, 90, 180 or 270.
+  A further turn clockwise, in degrees: 0, 90, 180, or 270.
 - **tags**: `String[Boolean]`
   A set: each tag the photo has, with the value true.  So `tags/cat` can
   be patched to true, to add a tag, or to null, to remove one.  The server
@@ -119,7 +119,7 @@ Standard JMAP `/query` method, with these additions.
 
 A **FilterCondition** object has the following properties, any of which
 may be given; all must match.  Conditions combine with the standard
-`AND`, `OR` and `NOT` FilterOperators.
+`AND`, `OR`, and `NOT` FilterOperators.
 
 - **visibility**: `String`
   The photo's visibility equals the value.

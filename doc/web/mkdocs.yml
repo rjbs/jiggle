@@ -6,8 +6,8 @@ site_url: ""
 use_directory_urls: true
 
 # From here to the nav, this file is the same as those of the Jinx manual
-# (../Jinx/doc/manual), the Go booklet in gizmo, NerfLearning and Juke, but
-# for the primary colour, so that the sites look alike and can still be told
+# (../Jinx/doc/manual), the Go booklet in gizmo, NerfLearning, and Juke, but
+# for the primary color, so that the sites look alike and can still be told
 # apart.  Change them together.
 theme:
   name: material
