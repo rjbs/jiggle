@@ -2,7 +2,11 @@ site_name: Jiggle
 site_description: >-
   Jiggle keeps a library of photos and publishes it as a static web site.
   This site documents the JMAP object types it defines.
-site_url: ""
+# The 404 page can be served at any depth, so it alone needs the site's path
+# to find its style sheets, and it takes that from here.  Every other page
+# links relatively.  If the site moves, change this, or the 404 page comes
+# out unstyled.
+site_url: https://semiotic.systems/jiggle/
 use_directory_urls: true
 
 # From here to the nav, this file is the same as those of the Jinx manual
